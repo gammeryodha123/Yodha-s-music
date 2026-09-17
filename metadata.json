@@ -1,0 +1,6 @@
+{
+  "name": "YODHA",
+  "description": "A premium music streaming app with seamless streaming, lyrics, and intuitive UI for music lovers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
