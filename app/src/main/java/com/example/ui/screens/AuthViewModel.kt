@@ -21,27 +21,51 @@ class AuthViewModel : ViewModel() {
     }
 
     fun signInWithEmail(email: String, pass: String) {
+        if (email.isBlank() || pass.isBlank()) {
+            _authState.value = AuthState.Error("Email and Password cannot be empty.")
+            return
+        }
         _authState.value = AuthState.Loading
         viewModelScope.launch {
-            val success = repository.signInWithEmail(email, pass)
-            _authState.value = if (success) AuthState.Success else AuthState.Error("Sign in failed. Check credentials.")
+            try {
+                repository.signInWithEmail(email, pass)
+                _authState.value = AuthState.Success
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.localizedMessage ?: "Sign in failed. Check credentials.")
+            }
         }
     }
 
     fun signUpWithEmail(email: String, pass: String) {
+        if (email.isBlank() || pass.isBlank()) {
+            _authState.value = AuthState.Error("Email and Password cannot be empty.")
+            return
+        }
         _authState.value = AuthState.Loading
         viewModelScope.launch {
-            val success = repository.signUpWithEmail(email, pass)
-            _authState.value = if (success) AuthState.Success else AuthState.Error("Sign up failed. User may already exist.")
+            try {
+                repository.signUpWithEmail(email, pass)
+                _authState.value = AuthState.Success
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.localizedMessage ?: "Sign up failed. User may already exist.")
+            }
         }
     }
 
     fun signInWithGoogle(idToken: String) {
         _authState.value = AuthState.Loading
         viewModelScope.launch {
-            val success = repository.signInWithGoogle(idToken)
-            _authState.value = if (success) AuthState.Success else AuthState.Error("Google Sign in failed.")
+            try {
+                repository.signInWithGoogle(idToken)
+                _authState.value = AuthState.Success
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.localizedMessage ?: "Google Sign-In failed.")
+            }
         }
+    }
+
+    fun setAuthStateError(message: String) {
+        _authState.value = AuthState.Error(message)
     }
 }
 

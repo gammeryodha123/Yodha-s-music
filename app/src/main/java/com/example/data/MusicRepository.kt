@@ -34,30 +34,15 @@ class MusicRepository {
         return auth.currentUser != null
     }
 
-    suspend fun signInWithEmail(email: String, pass: String): Boolean {
-        return try {
-            auth.signInWithEmailAndPassword(email, pass).await()
-            true
-        } catch (e: Exception) {
-            false
-        }
+    suspend fun signInWithEmail(email: String, pass: String) {
+        auth.signInWithEmailAndPassword(email, pass).await()
     }
 
-    suspend fun signUpWithEmail(email: String, pass: String): Boolean {
-        return try {
-            auth.createUserWithEmailAndPassword(email, pass).await()
-            true
-        } catch (e: Exception) {
-            false
-        }
+    suspend fun signUpWithEmail(email: String, pass: String) {
+        auth.createUserWithEmailAndPassword(email, pass).await()
     }
 
-    suspend fun signInWithGoogle(idToken: String): Boolean {
-        return try {
-            auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
-            true
-        } catch (e: Exception) {
-            false
-        }
+    suspend fun signInWithGoogle(idToken: String) {
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
     }
 }

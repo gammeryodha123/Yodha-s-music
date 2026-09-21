@@ -16,6 +16,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
+import androidx.compose.ui.platform.LocalContext
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
@@ -25,6 +31,8 @@ fun LoginScreen(
     val authState by viewModel.authState.collectAsState()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         viewModel.checkLoginStatus()
@@ -129,8 +137,41 @@ fun LoginScreen(
 
             Button(
                 onClick = {
-                    // Instruction: Implement Google Sign-In intent here and pass token to viewModel.signInWithGoogle(idToken)
-                    // Currently simulated or triggers Firebase Auth error without google-services.json
+                    coroutineScope.launch {
+                        try {
+                            val credentialManager = CredentialManager.create(context)
+                            val webClientId = try {
+                                context.getString(context.resources.getIdentifier("default_web_client_id", "string", context.packageName))
+                            } catch (e: Exception) {
+                                ""
+                            }
+
+                            if (webClientId.isEmpty()) {
+                                viewModel.setAuthStateError("Google Sign-In is not configured yet. Make sure Google Sign-In is enabled in your Firebase console and then re-download/update google-services.json.")
+                                return@launch
+                            }
+
+                            val googleIdOption = GetSignInWithGoogleOption.Builder(serverClientId = webClientId)
+                                .build()
+
+                            val request = GetCredentialRequest.Builder()
+                                .addCredentialOption(googleIdOption)
+                                .build()
+
+                            val result = credentialManager.getCredential(context, request)
+                            val credential = result.credential
+
+                            if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                                val idToken = googleIdTokenCredential.idToken
+                                viewModel.signInWithGoogle(idToken)
+                            } else {
+                                viewModel.setAuthStateError("Unexpected credential type: ${credential.type}")
+                            }
+                        } catch (e: Exception) {
+                            viewModel.setAuthStateError("Google Sign-In failed: ${e.localizedMessage ?: "Unknown error"}")
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
