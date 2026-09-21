@@ -28,9 +28,17 @@ import com.example.model.Song
 fun PlayerScreen(
     song: Song,
     isPlaying: Boolean,
+    playbackPositionMs: Long,
+    onPositionChange: (Long) -> Unit,
     onPlayPause: () -> Unit,
     onClose: () -> Unit
 ) {
+    val sliderValue = if (song.durationMs > 0L) {
+        (playbackPositionMs.toFloat() / song.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -93,10 +101,11 @@ fun PlayerScreen(
         
         Spacer(modifier = Modifier.height(24.dp))
         
-        // Progress bar mockup
         Slider(
-            value = 0.3f,
-            onValueChange = {},
+            value = sliderValue,
+            onValueChange = { newValue ->
+                onPositionChange((newValue * song.durationMs).toLong())
+            },
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primary
@@ -106,8 +115,8 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("1:03", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-            Text("3:30", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+            Text(formatTime(playbackPositionMs), fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+            Text(formatTime(song.durationMs), fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
         }
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -142,4 +151,11 @@ fun PlayerScreen(
             }
         }
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000L
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format("%d:%02d", minutes, seconds)
 }
