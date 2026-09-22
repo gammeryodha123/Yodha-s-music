@@ -64,6 +64,14 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    fun signInWithDemo() {
+        _authState.value = AuthState.Loading
+        viewModelScope.launch {
+            MusicRepository.isDemoLoggedIn = true
+            _authState.value = AuthState.Success
+        }
+    }
+
     fun setAuthStateError(message: String) {
         _authState.value = AuthState.Error(message)
     }

@@ -34,10 +34,10 @@ fun BottomPlayerBar(
     playbackPositionMs: Long,
     onPlayPause: () -> Unit,
     onClick: () -> Unit,
+    isLiked: Boolean,
+    onLikeToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isLiked by remember(currentSong.id) { mutableStateOf(false) }
-
     val progress = if (currentSong.durationMs > 0L) {
         (playbackPositionMs.toFloat() / currentSong.durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
@@ -90,7 +90,7 @@ fun BottomPlayerBar(
                     )
                 }
                 
-                IconButton(onClick = { isLiked = !isLiked }) {
+                IconButton(onClick = onLikeToggle) {
                     Icon(
                         imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = "Like",

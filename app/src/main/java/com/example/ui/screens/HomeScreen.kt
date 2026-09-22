@@ -10,44 +10,43 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.MusicRepository
 import com.example.model.Playlist
 import com.example.model.Song
 
-val mockPlaylists = listOf(
-    Playlist("1", "Top Hits India", "https://picsum.photos/seed/p1/300/300", "The biggest hits from India."),
-    Playlist("2", "Global Top 50", "https://picsum.photos/seed/p2/300/300", "What the world is listening to."),
-    Playlist("3", "Workout Warrior", "https://picsum.photos/seed/p3/300/300", "Get pumped with these beats.")
-)
-
-val mockRecentSongs = listOf(
-    Song("1", "Neon Dreams", "Synthwave Yodha", "https://picsum.photos/seed/s1/300/300", "", 210000),
-    Song("2", "Acoustic Sunrise", "Chill Vibes", "https://picsum.photos/seed/s2/300/300", "", 180000),
-    Song("3", "Cyberpunk Echoes", "Neo-Tokyo", "https://picsum.photos/seed/s3/300/300", "", 240000),
-    Song("4", "Lofi Beats", "Study Girl", "https://picsum.photos/seed/s4/300/300", "", 150000)
-)
-
 @Composable
 fun HomeScreen(
-    onSongSelected: (Song) -> Unit,
+    onSongSelected: (Song, List<Song>) -> Unit,
+    onPlaylistSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val repository = remember { MusicRepository() }
+    var recentSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        recentSongs = repository.getRecentSongs()
+        playlists = repository.getFeaturedPlaylists()
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp)
     ) {
         item {
             Text(
-                text = "Good Evening",
+                text = "Welcome Back",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -62,9 +61,16 @@ fun HomeScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(mockRecentSongs) { song ->
-                    RecentSongItem(song = song, onClick = { onSongSelected(song) })
+            if (recentSongs.isEmpty()) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(recentSongs) { song ->
+                        RecentSongItem(song = song, onClick = { onSongSelected(song, recentSongs) })
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -79,8 +85,14 @@ fun HomeScreen(
             )
         }
         
-        items(mockPlaylists) { playlist ->
-            PlaylistItem(playlist = playlist)
+        if (playlists.isEmpty()) {
+            item {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            }
+        } else {
+            items(playlists) { playlist ->
+                PlaylistItem(playlist = playlist, onClick = { onPlaylistSelected(playlist.id) })
+            }
         }
         
         item {
@@ -95,6 +107,7 @@ fun RecentSongItem(song: Song, onClick: () -> Unit) {
         modifier = Modifier
             .width(120.dp)
             .clickable { onClick() }
+            .testTag("recent_song_${song.id}")
     ) {
         AsyncImage(
             model = song.albumArtUrl,
@@ -122,15 +135,16 @@ fun RecentSongItem(song: Song, onClick: () -> Unit) {
 }
 
 @Composable
-fun PlaylistItem(playlist: Playlist) {
+fun PlaylistItem(playlist: Playlist, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable { }
+            .clickable { onClick() }
             .background(MaterialTheme.colorScheme.surface)
-            .padding(8.dp),
+            .padding(8.dp)
+            .testTag("featured_playlist_${playlist.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(

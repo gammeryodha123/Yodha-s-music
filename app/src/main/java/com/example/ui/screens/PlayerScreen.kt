@@ -3,11 +3,15 @@ package com.example.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
@@ -27,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.LyricLine
 import com.example.data.LyricsRepository
+import com.example.data.MusicRepository
 import com.example.model.Song
 import com.example.ui.components.LyricsView
 
@@ -38,7 +43,11 @@ fun PlayerScreen(
     playbackPositionMs: Long,
     onPositionChange: (Long) -> Unit,
     onPlayPause: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onNextTrack: () -> Unit,
+    onPreviousTrack: () -> Unit,
+    isLiked: Boolean,
+    onLikeToggle: () -> Unit
 ) {
     val sliderValue = if (song.durationMs > 0L) {
         (playbackPositionMs.toFloat() / song.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -47,6 +56,8 @@ fun PlayerScreen(
     }
 
     var showLyricsFullScreen by remember { mutableStateOf(false) }
+    var showPlaylistMenu by remember { mutableStateOf(false) }
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
 
     val lyricsRepository = remember { LyricsRepository() }
     var lyricLines by remember(song.id) { mutableStateOf<List<LyricLine>>(emptyList()) }
@@ -91,8 +102,22 @@ fun PlayerScreen(
                     letterSpacing = 2.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                 )
-                IconButton(onClick = { /* TODO */ }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                Box {
+                    IconButton(onClick = { showPlaylistMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                    }
+                    DropdownMenu(
+                        expanded = showPlaylistMenu,
+                        onDismissRequest = { showPlaylistMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Add to Playlist") },
+                            onClick = {
+                                showPlaylistMenu = false
+                                showAddToPlaylistDialog = true
+                            }
+                        )
+                    }
                 }
             }
             
@@ -128,6 +153,18 @@ fun PlayerScreen(
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                     )
                 }
+
+                IconButton(
+                    onClick = onLikeToggle,
+                    modifier = Modifier.testTag("like_button")
+                ) {
+                    Icon(
+                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like Song",
+                        tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -158,7 +195,7 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { /* TODO */ }) {
+                IconButton(onClick = onPreviousTrack) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(48.dp))
                 }
                 
@@ -177,7 +214,7 @@ fun PlayerScreen(
                     )
                 }
                 
-                IconButton(onClick = { /* TODO */ }) {
+                IconButton(onClick = onNextTrack) {
                     Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(48.dp))
                 }
             }
@@ -259,6 +296,44 @@ fun PlayerScreen(
             )
         }
     }
+
+    if (showAddToPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddToPlaylistDialog = false },
+            title = { Text("Add to Playlist") },
+            text = {
+                val playlistsToAdd = MusicRepository.customPlaylists.filter { it.id != "liked" }
+                if (playlistsToAdd.isEmpty()) {
+                    Text("No custom playlists created yet. Create one in the Library tab!")
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(playlistsToAdd) { playlist ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        MusicRepository().addSongToPlaylist(playlist.id, song)
+                                        showAddToPlaylistDialog = false
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(playlist.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddToPlaylistDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 
 private fun formatTime(ms: Long): String {
@@ -267,4 +342,3 @@ private fun formatTime(ms: Long): String {
     val seconds = totalSeconds % 60
     return String.format("%d:%02d", minutes, seconds)
 }
-

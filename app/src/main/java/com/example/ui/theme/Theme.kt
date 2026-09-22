@@ -31,6 +31,17 @@ private val DarkColorScheme = darkColorScheme(
 
 private val LightColorScheme = DarkColorScheme // Force dark theme
 
+private fun findActivity(context: android.content.Context): Activity? {
+    var currentContext = context
+    while (currentContext is android.content.ContextWrapper) {
+        if (currentContext is Activity) {
+            return currentContext
+        }
+        currentContext = currentContext.baseContext
+    }
+    return null
+}
+
 @Composable
 fun AppTheme(
     darkTheme: Boolean = true, // Force dark theme for music app
@@ -50,9 +61,12 @@ fun AppTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            val activity = findActivity(view.context)
+            if (activity != null) {
+                val window = activity.window
+                window.statusBarColor = colorScheme.background.toArgb()
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            }
         }
     }
 

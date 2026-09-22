@@ -102,6 +102,23 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
+                onClick = { viewModel.signInWithDemo() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(25.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                enabled = authState !is AuthState.Loading
+            ) {
+                Text("Demo Login / Quick Play", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedButton(
                 onClick = { viewModel.signInWithEmail(email, password) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -110,7 +127,7 @@ fun LoginScreen(
                 enabled = authState !is AuthState.Loading
             ) {
                 if (authState is AuthState.Loading) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 } else {
                     Text("Sign In", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
@@ -141,17 +158,24 @@ fun LoginScreen(
                         try {
                             val credentialManager = CredentialManager.create(context)
                             val webClientId = try {
-                                context.getString(context.resources.getIdentifier("default_web_client_id", "string", context.packageName))
+                                val id = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+                                if (id != 0) context.getString(id) else ""
                             } catch (e: Exception) {
                                 ""
                             }
 
-                            if (webClientId.isEmpty()) {
-                                viewModel.setAuthStateError("Google Sign-In is not configured yet. Make sure Google Sign-In is enabled in your Firebase console and then re-download/update google-services.json.")
+                            val finalWebClientId = if (webClientId.isNotEmpty()) {
+                                webClientId
+                            } else {
+                                "1058333427757-avmlama6291kspq79ttpliulo5vf82mi.apps.googleusercontent.com"
+                            }
+
+                            if (finalWebClientId.isEmpty()) {
+                                viewModel.setAuthStateError("Google Sign-In is not configured yet. Make sure Google Sign-In is enabled in your Firebase console.")
                                 return@launch
                             }
 
-                            val googleIdOption = GetSignInWithGoogleOption.Builder(serverClientId = webClientId)
+                            val googleIdOption = GetSignInWithGoogleOption.Builder(serverClientId = finalWebClientId)
                                 .build()
 
                             val request = GetCredentialRequest.Builder()
