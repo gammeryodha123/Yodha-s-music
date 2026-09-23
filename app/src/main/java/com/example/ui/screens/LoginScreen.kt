@@ -167,7 +167,7 @@ fun LoginScreen(
                             val finalWebClientId = if (webClientId.isNotEmpty()) {
                                 webClientId
                             } else {
-                                "1058333427757-avmlama6291kspq79ttpliulo5vf82mi.apps.googleusercontent.com"
+                                "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com"
                             }
 
                             if (finalWebClientId.isEmpty()) {

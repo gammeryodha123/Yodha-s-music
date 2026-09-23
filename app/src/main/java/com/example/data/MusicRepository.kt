@@ -40,6 +40,83 @@ class MusicRepository {
         )
     }
 
+    init {
+        loadLocalData()
+    }
+
+    private fun loadLocalData() {
+        CoroutineScope(Dispatchers.IO).launch {
+            var attempts = 0
+            while (attempts < 30) {
+                try {
+                    val db = com.example.database.AppDatabaseHelper.database
+                    
+                    // Observe liked songs reactively
+                    launch {
+                        db.localSongDao().getLikedSongs().collect { entities ->
+                            val songs = entities.map { entity ->
+                                Song(
+                                    id = entity.id,
+                                    title = entity.title,
+                                    artist = entity.artist,
+                                    albumArtUrl = entity.albumArtUrl,
+                                    streamUrl = entity.streamUrl,
+                                    durationMs = entity.durationMs,
+                                    lyrics = entity.lyrics
+                                )
+                            }
+                            withContext(Dispatchers.Main) {
+                                likedSongs.clear()
+                                likedSongs.addAll(songs)
+                                customPlaylists.replaceAll { playlist ->
+                                    if (playlist.id == "liked") {
+                                        playlist.copy(songs = songs)
+                                    } else {
+                                        playlist
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Observe custom playlists reactively
+                    launch {
+                        db.localPlaylistDao().getAllPlaylists().collect { entities ->
+                            val playlists = entities.map { entity ->
+                                Playlist(
+                                    id = entity.id,
+                                    name = entity.name,
+                                    coverUrl = entity.coverUrl,
+                                    description = entity.description,
+                                    songs = entity.songs
+                                )
+                            }
+                            withContext(Dispatchers.Main) {
+                                val likedPlaylist = customPlaylists.find { it.id == "liked" } ?: Playlist(
+                                    id = "liked",
+                                    name = "Liked Songs",
+                                    coverUrl = "https://picsum.photos/seed/liked/300/300",
+                                    description = "Your favorite tracks",
+                                    songs = likedSongs.toList()
+                                )
+                                customPlaylists.clear()
+                                customPlaylists.add(likedPlaylist)
+                                customPlaylists.addAll(playlists.filter { it.id != "liked" })
+                            }
+                        }
+                    }
+                    break
+                } catch (e: IllegalStateException) {
+                    attempts++
+                    kotlinx.coroutines.delay(100L)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    break
+                }
+            }
+        }
+    }
+
     private val auth: FirebaseAuth? by lazy {
         try { FirebaseAuth.getInstance() } catch (e: Throwable) { null }
     }
@@ -146,19 +223,46 @@ class MusicRepository {
         )
     }
 
-    // Liked Songs / Favorites
+    // Liked Songs / Favorites (Both Local SQLite Cache and Flow triggers)
     fun toggleLikeSong(song: Song) {
         if (likedSongs.any { it.id == song.id }) {
             likedSongs.removeIf { it.id == song.id }
         } else {
             likedSongs.add(song)
         }
-        // Keep Liked Songs playlist in sync
+        // Keep Liked Songs playlist in sync in-memory
         customPlaylists.replaceAll { playlist ->
             if (playlist.id == "liked") {
                 playlist.copy(songs = likedSongs.toList())
             } else {
                 playlist
+            }
+        }
+
+        // Persist change to local SQLite database asynchronously
+        val isLikedNow = likedSongs.any { it.id == song.id }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val dbInstance = com.example.database.AppDatabaseHelper.database
+                val existingEntity = dbInstance.localSongDao().getSongById(song.id)
+                if (existingEntity != null) {
+                    dbInstance.localSongDao().updateLikedStatus(song.id, isLikedNow)
+                } else {
+                    dbInstance.localSongDao().insertSong(
+                        com.example.database.LocalSongEntity(
+                            id = song.id,
+                            title = song.title,
+                            artist = song.artist,
+                            albumArtUrl = song.albumArtUrl,
+                            streamUrl = song.streamUrl,
+                            durationMs = song.durationMs,
+                            lyrics = song.lyrics,
+                            isLiked = isLikedNow
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -167,7 +271,7 @@ class MusicRepository {
         return likedSongs.any { it.id == songId }
     }
 
-    // Custom Playlists (with Firestore sync support)
+    // Custom Playlists (with Firestore sync & local Room database offline backing)
     suspend fun syncPlaylists() {
         val dbRef = db ?: return
         val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
@@ -214,6 +318,26 @@ class MusicRepository {
             customPlaylists.clear()
             customPlaylists.add(likedPlaylist)
             customPlaylists.addAll(loadedList.filter { it.id != "liked" })
+
+            // Cache successfully loaded playlists locally in Room
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val localDb = com.example.database.AppDatabaseHelper.database
+                    loadedList.forEach { playlist ->
+                        localDb.localPlaylistDao().insertPlaylist(
+                            com.example.database.LocalPlaylistEntity(
+                                id = playlist.id,
+                                name = playlist.name,
+                                coverUrl = playlist.coverUrl,
+                                description = playlist.description,
+                                songs = playlist.songs
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -230,7 +354,25 @@ class MusicRepository {
         )
         customPlaylists.add(newPlaylist)
 
-        // Sync asynchronously
+        // Save to Local SQLite DB via Room
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val localDb = com.example.database.AppDatabaseHelper.database
+                localDb.localPlaylistDao().insertPlaylist(
+                    com.example.database.LocalPlaylistEntity(
+                        id = newPlaylist.id,
+                        name = newPlaylist.name,
+                        coverUrl = newPlaylist.coverUrl,
+                        description = newPlaylist.description,
+                        songs = newPlaylist.songs
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Sync asynchronously to Firestore
         CoroutineScope(Dispatchers.IO).launch {
             savePlaylistToFirestore(newPlaylist)
         }
@@ -238,6 +380,18 @@ class MusicRepository {
 
     fun deletePlaylist(playlistId: String) {
         customPlaylists.removeIf { it.id == playlistId }
+
+        // Remove from Local SQLite DB via Room
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val localDb = com.example.database.AppDatabaseHelper.database
+                localDb.localPlaylistDao().deletePlaylistById(playlistId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Delete from Firestore
         CoroutineScope(Dispatchers.IO).launch {
             deletePlaylistFromFirestore(playlistId)
         }
@@ -259,6 +413,25 @@ class MusicRepository {
             }
         }
         updatedPlaylist?.let { p ->
+            // Update in Local SQLite DB via Room
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val localDb = com.example.database.AppDatabaseHelper.database
+                    localDb.localPlaylistDao().insertPlaylist(
+                        com.example.database.LocalPlaylistEntity(
+                            id = p.id,
+                            name = p.name,
+                            coverUrl = p.coverUrl,
+                            description = p.description,
+                            songs = p.songs
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // Sync to Firestore
             CoroutineScope(Dispatchers.IO).launch {
                 savePlaylistToFirestore(p)
             }
@@ -277,6 +450,25 @@ class MusicRepository {
             }
         }
         updatedPlaylist?.let { p ->
+            // Update in Local SQLite DB via Room
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val localDb = com.example.database.AppDatabaseHelper.database
+                    localDb.localPlaylistDao().insertPlaylist(
+                        com.example.database.LocalPlaylistEntity(
+                            id = p.id,
+                            name = p.name,
+                            coverUrl = p.coverUrl,
+                            description = p.description,
+                            songs = p.songs
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // Sync to Firestore
             CoroutineScope(Dispatchers.IO).launch {
                 savePlaylistToFirestore(p)
             }

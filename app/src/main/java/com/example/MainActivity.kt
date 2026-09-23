@@ -20,6 +20,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Initialize AppDatabaseHelper for Room Database local access
+        com.example.database.AppDatabaseHelper.init(applicationContext)
+
         // Initialize AdMob Mobile Ads SDK
         com.google.android.gms.ads.MobileAds.initialize(this)
         // Preload Interstitial Ad
