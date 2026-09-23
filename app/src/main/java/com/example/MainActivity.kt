@@ -19,6 +19,12 @@ import com.example.ui.theme.AppTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize AdMob Mobile Ads SDK
+        com.google.android.gms.ads.MobileAds.initialize(this)
+        // Preload Interstitial Ad
+        com.example.ui.components.AdMobInterstitialHelper.loadAd(this)
+
         enableEdgeToEdge()
         setContent {
             AppTheme {

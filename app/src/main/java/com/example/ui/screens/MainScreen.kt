@@ -33,6 +33,25 @@ fun MainScreen() {
         currentSong?.let { repository.isSongLiked(it.id) } ?: false
     }
 
+    val localContext = androidx.compose.ui.platform.LocalContext.current
+    var songSelectionCount by remember { mutableStateOf(0) }
+
+    val playSongWithAd: (Song, List<Song>) -> Unit = { selectedSong, selectedQueue ->
+        val activity = localContext as? android.app.Activity
+        songSelectionCount++
+        if (songSelectionCount % 3 == 0 && activity != null) {
+            com.example.ui.components.AdMobInterstitialHelper.showAd(activity) {
+                currentSong = selectedSong
+                currentQueue = selectedQueue
+                isPlaying = true
+            }
+        } else {
+            currentSong = selectedSong
+            currentQueue = selectedQueue
+            isPlaying = true
+        }
+    }
+
     // Reset playback position when song changes
     LaunchedEffect(currentSong) {
         playbackPositionMs = 0L
@@ -133,6 +152,14 @@ fun MainScreen() {
                                 .testTag("bottom_player_bar")
                         )
                     }
+                    
+                    // Display AdMob Banner Ad above bottom navigation
+                    com.example.ui.components.AdMobBannerAd(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    )
+
                     NavigationBar {
                         NavigationBarItem(
                             icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
@@ -162,29 +189,17 @@ fun MainScreen() {
             Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
                 when (selectedTab) {
                     0 -> HomeScreen(
-                        onSongSelected = { selectedSong, selectedQueue ->
-                            currentSong = selectedSong
-                            currentQueue = selectedQueue
-                            isPlaying = true
-                        },
+                        onSongSelected = playSongWithAd,
                         onPlaylistSelected = { playlistId ->
                             // Dynamically swap tab to library and open playlist detail
                             selectedTab = 2
                         }
                     )
                     1 -> SearchScreen(
-                        onSongSelected = { selectedSong, selectedQueue ->
-                            currentSong = selectedSong
-                            currentQueue = selectedQueue
-                            isPlaying = true
-                        }
+                        onSongSelected = playSongWithAd
                     )
                     2 -> LibraryScreen(
-                        onSongSelected = { selectedSong, selectedQueue ->
-                            currentSong = selectedSong
-                            currentQueue = selectedQueue
-                            isPlaying = true
-                        },
+                        onSongSelected = playSongWithAd,
                         repository = repository
                     )
                 }
