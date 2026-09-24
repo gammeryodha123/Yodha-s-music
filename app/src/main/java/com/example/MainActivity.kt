@@ -20,13 +20,41 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Programmatically initialize Firebase with the correct active project options
+        try {
+            val options = com.google.firebase.FirebaseOptions.Builder()
+                .setApiKey("AIzaSyAcwyg4E4bMwqiGodKhzZXluwkiC7WNCDQ")
+                .setApplicationId("1:684033752161:web:42fdec3268ee81e3c87e20")
+                .setProjectId("circular-hangar-csmzh")
+                .setStorageBucket("circular-hangar-csmzh.firebasestorage.app")
+                .build()
+            
+            if (com.google.firebase.FirebaseApp.getApps(this).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(this, options)
+            } else {
+                try {
+                    com.google.firebase.FirebaseApp.getInstance().delete()
+                } catch (e: Exception) {
+                    // Ignore if delete fails
+                }
+                com.google.firebase.FirebaseApp.initializeApp(this, options)
+            }
+            android.util.Log.d("MainActivity", "FirebaseApp successfully initialized programmatically.")
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "Failed to initialize FirebaseApp programmatically: ${e.message}")
+        }
+
         // Initialize AppDatabaseHelper for Room Database local access
         com.example.database.AppDatabaseHelper.init(applicationContext)
 
-        // Initialize AdMob Mobile Ads SDK
-        com.google.android.gms.ads.MobileAds.initialize(this)
-        // Preload Interstitial Ad
-        com.example.ui.components.AdMobInterstitialHelper.loadAd(this)
+        // Initialize AdMob Mobile Ads SDK with try-catch safety
+        try {
+            com.google.android.gms.ads.MobileAds.initialize(this)
+            // Preload Interstitial Ad
+            com.example.ui.components.AdMobInterstitialHelper.loadAd(this)
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "Failed to initialize AdMob SDK: ${e.message}")
+        }
 
         enableEdgeToEdge()
         setContent {

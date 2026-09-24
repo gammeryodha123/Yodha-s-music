@@ -120,8 +120,13 @@ class MusicRepository {
     private val auth: FirebaseAuth? by lazy {
         try { FirebaseAuth.getInstance() } catch (e: Throwable) { null }
     }
-    private val db: FirebaseFirestore? by lazy {
-        try { FirebaseFirestore.getInstance() } catch (e: Throwable) { null }
+    private val db: com.google.firebase.firestore.FirebaseFirestore? by lazy {
+        try {
+            val app = com.google.firebase.FirebaseApp.getInstance()
+            com.google.firebase.firestore.FirebaseFirestore.getInstance(app, "ai-studio-yodhasmusic-f0883535-73c2-4b29-8daf-ae7f3ff4d62e")
+        } catch (e: Throwable) {
+            try { com.google.firebase.firestore.FirebaseFirestore.getInstance() } catch (e2: Throwable) { null }
+        }
     }
 
     suspend fun getFeaturedPlaylists(): List<Playlist> {

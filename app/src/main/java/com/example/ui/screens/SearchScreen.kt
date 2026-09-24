@@ -2,9 +2,11 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -25,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.MusicRepository
 import com.example.model.Song
+import com.example.network.MusicSourcesManager
+import com.example.network.SearchSource
 
 data class GenreCard(val name: String, val colors: List<Color>)
 
@@ -35,6 +39,9 @@ fun SearchScreen(
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
+    var selectedSource by remember { mutableStateOf(SearchSource.ALL) }
+    var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
     
     val genres = remember {
         listOf(
@@ -49,13 +56,17 @@ fun SearchScreen(
         )
     }
 
-    val filteredSongs = remember(query) {
+    LaunchedEffect(query, selectedSource) {
         if (query.isBlank()) {
-            emptyList()
+            searchResults = emptyList()
         } else {
-            MusicRepository.masterSongList.filter { song ->
-                song.title.contains(query, ignoreCase = true) ||
-                song.artist.contains(query, ignoreCase = true)
+            isLoading = true
+            try {
+                searchResults = MusicSourcesManager.searchAllSources(query, selectedSource)
+            } catch (e: Exception) {
+                searchResults = emptyList()
+            } finally {
+                isLoading = false
             }
         }
     }
@@ -67,7 +78,7 @@ fun SearchScreen(
             .padding(horizontal = 16.dp)
     ) {
         Text(
-            text = "Search",
+            text = "Search Services",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -78,7 +89,7 @@ fun SearchScreen(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("What do you want to listen to?", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) },
+            placeholder = { Text("Search songs, artists or nodes...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search Icon") },
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -89,7 +100,7 @@ fun SearchScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp)
+                .padding(bottom = 12.dp)
                 .testTag("search_text_input"),
             singleLine = true,
             shape = RoundedCornerShape(28.dp),
@@ -101,10 +112,40 @@ fun SearchScreen(
             )
         )
 
+        // Integrated Server & Service Selection Chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val sources = listOf(
+                SearchSource.ALL to "All Sources",
+                SearchSource.YOUTUBE to "YouTube (YT)",
+                SearchSource.SOUNDCLOUD to "SoundCloud",
+                SearchSource.PIPED to "Piped Servers"
+            )
+            sources.forEach { (src, label) ->
+                val selected = selectedSource == src
+                FilterChip(
+                    selected = selected,
+                    onClick = { selectedSource = src },
+                    label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+        }
+
         if (query.isEmpty()) {
             // Browse Categories
             Text(
-                text = "Browse all",
+                text = "Browse genres",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -152,8 +193,17 @@ fun SearchScreen(
                 }
             }
         } else {
-            // Display Filtered Songs
-            if (filteredSongs.isEmpty()) {
+            // Display Results or Loading State
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else if (searchResults.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,7 +211,7 @@ fun SearchScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No results found for \"$query\"",
+                        text = "No tracks found on ${selectedSource.name.lowercase()} for \"$query\"",
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -171,12 +221,12 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(filteredSongs) { song ->
+                    items(searchResults) { song ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSongSelected(song, filteredSongs) }
+                                .clickable { onSongSelected(song, searchResults) }
                                 .padding(8.dp)
                                 .testTag("search_result_${song.id}"),
                             verticalAlignment = Alignment.CenterVertically
@@ -195,13 +245,46 @@ fun SearchScreen(
                                     text = song.title,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
-                                    color = MaterialTheme.colorScheme.onBackground
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1
                                 )
-                                Text(
-                                    text = song.artist,
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val sourceTag = when {
+                                        song.id.startsWith("piped_") -> "Piped"
+                                        song.id.startsWith("soundcloud_") -> "SoundCloud"
+                                        song.id.startsWith("yt_") -> "YouTube"
+                                        else -> "Local"
+                                    }
+                                    val tagColor = when (sourceTag) {
+                                        "Piped" -> MaterialTheme.colorScheme.tertiary
+                                        "SoundCloud" -> Color(0xFFFF5500)
+                                        "YouTube" -> Color(0xFFFF0000)
+                                        else -> MaterialTheme.colorScheme.secondary
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(tagColor.copy(alpha = 0.15f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = sourceTag,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = tagColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = song.artist,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                        maxLines = 1
+                                    )
+                                }
                             }
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
