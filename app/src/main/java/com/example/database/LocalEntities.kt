@@ -24,3 +24,21 @@ data class LocalPlaylistEntity(
     val description: String,
     val songs: List<Song> = emptyList()
 )
+
+@Entity(tableName = "recent_queries")
+data class RecentQueryEntity(
+    @PrimaryKey val queryText: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "recent_songs_played")
+data class RecentSongEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val artist: String,
+    val albumArtUrl: String,
+    val streamUrl: String,
+    val durationMs: Long,
+    val lyrics: String? = null,
+    val playedAt: Long = System.currentTimeMillis()
+)

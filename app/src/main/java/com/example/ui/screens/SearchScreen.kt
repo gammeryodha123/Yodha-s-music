@@ -29,6 +29,7 @@ import com.example.data.MusicRepository
 import com.example.model.Song
 import com.example.network.MusicSourcesManager
 import com.example.network.SearchSource
+import kotlinx.coroutines.launch
 
 data class GenreCard(val name: String, val colors: List<Color>)
 
@@ -43,6 +44,15 @@ fun SearchScreen(
     var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Read search history and recently played from Room reactively
+    val recentQueriesState = remember { MusicRepository.getRecentSearchQueries() }
+    val recentQueries by recentQueriesState.collectAsState(initial = emptyList())
+
+    val recentlyPlayedState = remember { MusicRepository.getRecentlyPlayedSongs() }
+    val recentlyPlayed by recentlyPlayedState.collectAsState(initial = emptyList())
+
     val genres = remember {
         listOf(
             GenreCard("Synthwave", listOf(Color(0xFFE01A4F), Color(0xFFF15946))),
@@ -63,12 +73,24 @@ fun SearchScreen(
             isLoading = true
             try {
                 searchResults = MusicSourcesManager.searchAllSources(query, selectedSource)
+                // Auto-save search queries to Room if matches were found
+                if (searchResults.isNotEmpty()) {
+                    MusicRepository.saveSearchQuery(query)
+                }
             } catch (e: Exception) {
                 searchResults = emptyList()
             } finally {
                 isLoading = false
             }
         }
+    }
+
+    // Handles playing a song and saving it to local Room "recents" database
+    val handleSongClick: (Song, List<Song>) -> Unit = { selectedSong, list ->
+        coroutineScope.launch {
+            MusicRepository.saveRecentlyPlayedSong(selectedSong)
+        }
+        onSongSelected(selectedSong, list)
     }
 
     Column(
@@ -143,19 +165,131 @@ fun SearchScreen(
         }
 
         if (query.isEmpty()) {
-            // Browse Categories
-            Text(
-                text = "Browse genres",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f)
             ) {
+                // 1. Room-Cached Recent Searches Section
+                if (recentQueries.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recent searches",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            TextButton(
+                                onClick = {
+                                    coroutineScope.launch { MusicRepository.clearSearchHistory() }
+                                }
+                            ) {
+                                Text("Clear all", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            recentQueries.forEach { recent ->
+                                SuggestionChip(
+                                    onClick = { query = recent.queryText },
+                                    label = { Text(recent.queryText, fontSize = 12.sp) },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. Room-Cached Recently Played Section
+                if (recentlyPlayed.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Recently played",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            recentlyPlayed.forEach { recentSong ->
+                                val songObj = Song(
+                                    id = recentSong.id,
+                                    title = recentSong.title,
+                                    artist = recentSong.artist,
+                                    albumArtUrl = recentSong.albumArtUrl,
+                                    streamUrl = recentSong.streamUrl,
+                                    durationMs = recentSong.durationMs,
+                                    lyrics = recentSong.lyrics
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .width(110.dp)
+                                        .clickable {
+                                            handleSongClick(songObj, recentlyPlayed.map {
+                                                Song(it.id, it.title, it.artist, it.albumArtUrl, it.streamUrl, it.durationMs, it.lyrics)
+                                            })
+                                        }
+                                ) {
+                                    AsyncImage(
+                                        model = recentSong.albumArtUrl,
+                                        contentDescription = recentSong.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(110.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = recentSong.title,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        maxLines = 1,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = recentSong.artist,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        maxLines = 1,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. Static Music Genres
+                item {
+                    Text(
+                        text = "Browse genres",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
+                }
+
                 // Render grid using pairs of genres
                 val rows = genres.chunked(2)
                 items(rows) { pair ->
@@ -189,7 +323,7 @@ fun SearchScreen(
                     }
                 }
                 item {
-                    Spacer(modifier = Modifier.height(80.dp)) // Extra scroll spacing
+                    Spacer(modifier = Modifier.height(100.dp)) // Extra scroll spacing
                 }
             }
         } else {
@@ -226,7 +360,7 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSongSelected(song, searchResults) }
+                                .clickable { handleSongClick(song, searchResults) }
                                 .padding(8.dp)
                                 .testTag("search_result_${song.id}"),
                             verticalAlignment = Alignment.CenterVertically

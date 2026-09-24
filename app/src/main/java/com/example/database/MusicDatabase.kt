@@ -7,14 +7,21 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [LocalSongEntity::class, LocalPlaylistEntity::class],
-    version = 1,
+    entities = [
+        LocalSongEntity::class, 
+        LocalPlaylistEntity::class,
+        RecentQueryEntity::class,
+        RecentSongEntity::class
+    ],
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(RoomTypeConverters::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun localSongDao(): LocalSongDao
     abstract fun localPlaylistDao(): LocalPlaylistDao
+    abstract fun recentQueryDao(): RecentQueryDao
+    abstract fun recentSongDao(): RecentSongDao
 
     companion object {
         @Volatile

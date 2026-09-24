@@ -38,6 +38,54 @@ class MusicRepository {
             Song("9", "Rainy Nights", "Cozy Waves", "https://picsum.photos/seed/s9/300/300", "", 185000),
             Song("10", "Techno Pulse", "Digital God", "https://picsum.photos/seed/s10/300/300", "", 250000)
         )
+
+        // Flow of recent search queries from Room
+        fun getRecentSearchQueries(): kotlinx.coroutines.flow.Flow<List<com.example.database.RecentQueryEntity>> {
+            val db = com.example.database.AppDatabaseHelper.database
+            return db.recentQueryDao().getRecentQueries()
+        }
+
+        // Save a search query to Room
+        suspend fun saveSearchQuery(queryText: String) = withContext(Dispatchers.IO) {
+            if (queryText.isNotBlank()) {
+                val db = com.example.database.AppDatabaseHelper.database
+                db.recentQueryDao().insertQuery(com.example.database.RecentQueryEntity(queryText = queryText.trim()))
+            }
+        }
+
+        // Delete a search query from Room
+        suspend fun deleteSearchQuery(queryText: String) = withContext(Dispatchers.IO) {
+            val db = com.example.database.AppDatabaseHelper.database
+            db.recentQueryDao().deleteQuery(queryText)
+        }
+
+        // Clear all queries from Room
+        suspend fun clearSearchHistory() = withContext(Dispatchers.IO) {
+            val db = com.example.database.AppDatabaseHelper.database
+            db.recentQueryDao().clearAllQueries()
+        }
+
+        // Flow of recently played songs from Room
+        fun getRecentlyPlayedSongs(): kotlinx.coroutines.flow.Flow<List<com.example.database.RecentSongEntity>> {
+            val db = com.example.database.AppDatabaseHelper.database
+            return db.recentSongDao().getRecentSongs()
+        }
+
+        // Save a recently played song to Room
+        suspend fun saveRecentlyPlayedSong(song: Song) = withContext(Dispatchers.IO) {
+            val db = com.example.database.AppDatabaseHelper.database
+            db.recentSongDao().insertRecentSong(
+                com.example.database.RecentSongEntity(
+                    id = song.id,
+                    title = song.title,
+                    artist = song.artist,
+                    albumArtUrl = song.albumArtUrl,
+                    streamUrl = song.streamUrl,
+                    durationMs = song.durationMs,
+                    lyrics = song.lyrics
+                )
+            )
+        }
     }
 
     init {
