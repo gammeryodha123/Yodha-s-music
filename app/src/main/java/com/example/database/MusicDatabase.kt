@@ -50,6 +50,9 @@ object AppDatabaseHelper {
         applicationContext = context.applicationContext
     }
 
+    val context: Context?
+        get() = applicationContext
+
     val database: MusicDatabase by lazy {
         val context = applicationContext ?: throw IllegalStateException("AppDatabaseHelper is not initialized.")
         MusicDatabase.getDatabase(context)

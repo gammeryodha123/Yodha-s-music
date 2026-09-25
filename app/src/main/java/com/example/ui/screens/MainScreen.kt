@@ -1,9 +1,15 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,27 +19,28 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.MusicRepository
 import com.example.model.Song
+import com.example.network.AudioPlayerManager
 import com.example.ui.components.BottomPlayerBar
 
 @Composable
 fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
-    var currentSong by remember { mutableStateOf<Song?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
     var showPlayerFullScreen by remember { mutableStateOf(false) }
-    var playbackPositionMs by remember { mutableStateOf(0L) }
-    
-    // Playback playlist queue tracking
-    var currentQueue by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var searchInitialSource by remember { mutableStateOf(com.example.network.SearchSource.ALL) }
 
     val repository = remember { MusicRepository() }
+    val localContext = androidx.compose.ui.platform.LocalContext.current
+
+    // Bind state flows directly to the real Android MediaPlayer manager
+    val currentSong by AudioPlayerManager.currentSong.collectAsState()
+    val isPlaying by AudioPlayerManager.isPlaying.collectAsState()
+    val playbackPositionMs by AudioPlayerManager.playbackPositionMs.collectAsState()
 
     // Synchronize liked state dynamically
     val isLiked = remember(currentSong, MusicRepository.likedSongs) {
         currentSong?.let { repository.isSongLiked(it.id) } ?: false
     }
 
-    val localContext = androidx.compose.ui.platform.LocalContext.current
     var songSelectionCount by remember { mutableStateOf(0) }
 
     val playSongWithAd: (Song, List<Song>) -> Unit = { selectedSong, selectedQueue ->
@@ -41,73 +48,21 @@ fun MainScreen() {
         songSelectionCount++
         if (songSelectionCount % 3 == 0 && activity != null) {
             com.example.ui.components.AdMobInterstitialHelper.showAd(activity) {
-                currentSong = selectedSong
-                currentQueue = selectedQueue
-                isPlaying = true
+                AudioPlayerManager.setQueue(selectedQueue)
+                AudioPlayerManager.playSong(localContext, selectedSong)
             }
         } else {
-            currentSong = selectedSong
-            currentQueue = selectedQueue
-            isPlaying = true
+            AudioPlayerManager.setQueue(selectedQueue)
+            AudioPlayerManager.playSong(localContext, selectedSong)
         }
     }
 
-    // Reset playback position when song changes
-    LaunchedEffect(currentSong) {
-        playbackPositionMs = 0L
-    }
-
-    // Progression timer loop
-    LaunchedEffect(isPlaying, currentSong) {
-        val song = currentSong
-        if (isPlaying && song != null) {
-            while (true) {
-                kotlinx.coroutines.delay(1000L)
-                val newPosition = playbackPositionMs + 1000L
-                if (newPosition >= song.durationMs) {
-                    playbackPositionMs = song.durationMs
-                    isPlaying = false
-                    // Auto-play next song in queue if available
-                    if (currentQueue.isNotEmpty()) {
-                        val index = currentQueue.indexOfFirst { it.id == song.id }
-                        if (index != -1 && index + 1 < currentQueue.size) {
-                            currentSong = currentQueue[index + 1]
-                            isPlaying = true
-                        }
-                    }
-                    break
-                } else {
-                    playbackPositionMs = newPosition
-                }
-            }
-        }
-    }
-
-    // Previous and Next song in queue execution
     val onNextTrack: () -> Unit = {
-        val queue = currentQueue
-        val song = currentSong
-        if (queue.isNotEmpty() && song != null) {
-            val index = queue.indexOfFirst { it.id == song.id }
-            if (index != -1) {
-                val nextIndex = (index + 1) % queue.size
-                currentSong = queue[nextIndex]
-                isPlaying = true
-            }
-        }
+        AudioPlayerManager.playNext(localContext)
     }
 
     val onPreviousTrack: () -> Unit = {
-        val queue = currentQueue
-        val song = currentSong
-        if (queue.isNotEmpty() && song != null) {
-            val index = queue.indexOfFirst { it.id == song.id }
-            if (index != -1) {
-                val prevIndex = if (index - 1 < 0) queue.size - 1 else index - 1
-                currentSong = queue[prevIndex]
-                isPlaying = true
-            }
-        }
+        AudioPlayerManager.playPrevious(localContext)
     }
 
     val onLikeToggle: () -> Unit = {
@@ -117,23 +72,7 @@ fun MainScreen() {
         }
     }
 
-    val song = currentSong
-    if (showPlayerFullScreen && song != null) {
-        PlayerScreen(
-            song = song,
-            isPlaying = isPlaying,
-            playbackPositionMs = playbackPositionMs,
-            onPositionChange = { newPosition ->
-                playbackPositionMs = newPosition.coerceIn(0L, song.durationMs)
-            },
-            onPlayPause = { isPlaying = !isPlaying },
-            onClose = { showPlayerFullScreen = false },
-            onNextTrack = onNextTrack,
-            onPreviousTrack = onPreviousTrack,
-            isLiked = isLiked,
-            onLikeToggle = onLikeToggle
-        )
-    } else {
+    Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
                 Column {
@@ -142,7 +81,7 @@ fun MainScreen() {
                             currentSong = currentSong!!,
                             isPlaying = isPlaying,
                             playbackPositionMs = playbackPositionMs,
-                            onPlayPause = { isPlaying = !isPlaying },
+                            onPlayPause = { AudioPlayerManager.togglePlayPause() },
                             onClick = { showPlayerFullScreen = true },
                             isLiked = isLiked,
                             onLikeToggle = onLikeToggle,
@@ -182,6 +121,13 @@ fun MainScreen() {
                             onClick = { selectedTab = 2 },
                             modifier = Modifier.testTag("nav_library_tab")
                         )
+                        NavigationBarItem(
+                            icon = { Icon(Icons.Default.Lock, contentDescription = "Privacy Hub") },
+                            label = { Text("Privacy") },
+                            selected = selectedTab == 3,
+                            onClick = { selectedTab = 3 },
+                            modifier = Modifier.testTag("nav_privacy_tab")
+                        )
                     }
                 }
             }
@@ -196,13 +142,50 @@ fun MainScreen() {
                         }
                     )
                     1 -> SearchScreen(
-                        onSongSelected = playSongWithAd
+                        onSongSelected = playSongWithAd,
+                        initialSource = searchInitialSource
                     )
                     2 -> LibraryScreen(
                         onSongSelected = playSongWithAd,
                         repository = repository
                     )
+                    3 -> OpenSourceScreen(
+                        onNavigateToSearchWithSource = { sourceName ->
+                            searchInitialSource = if (sourceName == "PeerTube") com.example.network.SearchSource.PEERTUBE else com.example.network.SearchSource.ALL
+                            selectedTab = 1
+                        }
+                    )
                 }
+            }
+        }
+
+        // Beautiful Slide-Up Full-Screen Player Overlay
+        AnimatedVisibility(
+            visible = showPlayerFullScreen && currentSong != null,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+            )
+        ) {
+            currentSong?.let { activeSong ->
+                PlayerScreen(
+                    song = activeSong,
+                    isPlaying = isPlaying,
+                    playbackPositionMs = playbackPositionMs,
+                    onPositionChange = { newPosition ->
+                        AudioPlayerManager.seekTo(newPosition)
+                    },
+                    onPlayPause = { AudioPlayerManager.togglePlayPause() },
+                    onClose = { showPlayerFullScreen = false },
+                    onNextTrack = onNextTrack,
+                    onPreviousTrack = onPreviousTrack,
+                    isLiked = isLiked,
+                    onLikeToggle = onLikeToggle
+                )
             }
         }
     }

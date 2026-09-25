@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,15 +38,23 @@ data class GenreCard(val name: String, val colors: List<Color>)
 @Composable
 fun SearchScreen(
     onSongSelected: (Song, List<Song>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialSource: SearchSource = SearchSource.ALL
 ) {
     var query by remember { mutableStateOf("") }
-    var selectedSource by remember { mutableStateOf(SearchSource.ALL) }
+    var selectedSource by remember { mutableStateOf(initialSource) }
     var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     
-    val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(initialSource) {
+        selectedSource = initialSource
+    }
     
+    val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+
+
     // Read search history and recently played from Room reactively
     val recentQueriesState = remember { MusicRepository.getRecentSearchQueries() }
     val recentQueries by recentQueriesState.collectAsState(initial = emptyList())
@@ -93,12 +102,15 @@ fun SearchScreen(
         onSongSelected(selectedSong, list)
     }
 
+
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
     ) {
+        // Top title
         Text(
             text = "Search Services",
             fontSize = 24.sp,
@@ -146,8 +158,8 @@ fun SearchScreen(
             val sources = listOf(
                 SearchSource.ALL to "All Sources",
                 SearchSource.YOUTUBE to "YouTube (YT)",
-                SearchSource.SOUNDCLOUD to "SoundCloud",
-                SearchSource.PIPED to "Piped Servers"
+                SearchSource.PIPED to "Piped Servers",
+                SearchSource.PEERTUBE to "PeerTube"
             )
             sources.forEach { (src, label) ->
                 val selected = selectedSource == src
@@ -387,14 +399,14 @@ fun SearchScreen(
                                 ) {
                                     val sourceTag = when {
                                         song.id.startsWith("piped_") -> "Piped"
-                                        song.id.startsWith("soundcloud_") -> "SoundCloud"
                                         song.id.startsWith("yt_") -> "YouTube"
+                                        song.id.startsWith("peertube_") -> "PeerTube"
                                         else -> "Local"
                                     }
                                     val tagColor = when (sourceTag) {
                                         "Piped" -> MaterialTheme.colorScheme.tertiary
-                                        "SoundCloud" -> Color(0xFFFF5500)
                                         "YouTube" -> Color(0xFFFF0000)
+                                        "PeerTube" -> Color(0xFFF1680D)
                                         else -> MaterialTheme.colorScheme.secondary
                                     }
                                     

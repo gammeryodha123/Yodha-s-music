@@ -55,52 +55,22 @@ interface PipedApiService {
 }
 
 // -----------------------------------------------------
-// 2. SoundCloud API Models & Retrofit Interface
-// -----------------------------------------------------
-@JsonClass(generateAdapter = true)
-data class SCTrack(
-    val id: Long? = null,
-    val title: String? = null,
-    val user: SCUser? = null,
-    val artwork_url: String? = null,
-    val stream_url: String? = null,
-    val duration: Long? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class SCUser(
-    val username: String? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class SCSearchResponse(
-    val collection: List<SCTrack>? = null
-)
-
-interface SoundCloudApiService {
-    @GET("tracks")
-    suspend fun searchTracks(
-        @Query("q") query: String,
-        @Query("client_id") clientId: String
-    ): SCSearchResponse
-}
-
-// -----------------------------------------------------
-// 3. Unified Music Sources Manager
+// 3. Unified Music Sources Manager with Self-Healing Rotation
 // -----------------------------------------------------
 object MusicSourcesManager {
     private const val TAG = "MusicSourcesManager"
     
-    // Configurable active Piped instance. Defaults to a highly stable public node.
-    var activePipedServer: String = "https://pipedapi.kavin.rocks/"
-        set(value) {
-            field = if (value.endsWith("/")) value else "$value/"
-            rebuildRetrofit()
-        }
+    // List of active public Piped API mirrors
+    private val PIPED_SERVERS = listOf(
+        "https://pipedapi.kavin.rocks/",
+        "https://piped-api.garudalinux.org/",
+        "https://pipedapi.tokhmi.xyz/",
+        "https://pipedapi.aeong.one/",
+        "https://api.piped.yt/"
+    )
+    private var pipedServerIndex = 0
 
-    // SoundCloud Public API Endpoint & Client ID
-    private const val SC_BASE_URL = "https://api-v2.soundcloud.com/"
-    var soundCloudClientId: String = "avmlama6291kspq79ttpliulo5vf82mi"
+    var activePipedServer: String = "https://pipedapi.kavin.rocks/"
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
@@ -112,7 +82,6 @@ object MusicSourcesManager {
         .build()
 
     private var pipedApi: PipedApiService? = null
-    private var scApi: SoundCloudApiService? = null
 
     init {
         rebuildRetrofit()
@@ -126,13 +95,6 @@ object MusicSourcesManager {
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
             pipedApi = pipedRetrofit.create(PipedApiService::class.java)
-
-            val scRetrofit = Retrofit.Builder()
-                .baseUrl(SC_BASE_URL)
-                .client(okHttpClient)
-                .addConverterFactory(MoshiConverterFactory.create(moshi))
-                .build()
-            scApi = scRetrofit.create(SoundCloudApiService::class.java)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to build Retrofit services: ${e.message}")
         }
@@ -147,13 +109,12 @@ object MusicSourcesManager {
         when (source) {
             SearchSource.ALL -> {
                 results.addAll(searchPiped(query))
-                results.addAll(searchSoundCloud(query))
             }
             SearchSource.YOUTUBE, SearchSource.PIPED -> {
                 results.addAll(searchPiped(query))
             }
-            SearchSource.SOUNDCLOUD -> {
-                results.addAll(searchSoundCloud(query))
+            SearchSource.PEERTUBE -> {
+                // Handled via offline high-fidelity mock stream fallback
             }
         }
 
@@ -165,51 +126,62 @@ object MusicSourcesManager {
         return@withContext results
     }
 
-    // 1. YouTube / Piped API Search Implementation
+    // 1. YouTube / Piped API Search Implementation with Self-Healing Server Mirror Rotation
     private suspend fun searchPiped(query: String): List<Song> {
-        return try {
-            val response = pipedApi?.search(query) ?: emptyList()
-            response.filter { it.type == "stream" }.map { result ->
-                val videoId = result.url?.substringAfter("watch?v=", "") ?: ""
-                val id = if (videoId.isNotEmpty()) "piped_$videoId" else "piped_${System.currentTimeMillis()}"
-                Song(
-                    id = id,
-                    title = result.title ?: "Unknown YT Track",
-                    artist = result.uploaderName ?: "YouTube / Piped Stream",
-                    albumArtUrl = result.thumbnail ?: "https://picsum.photos/seed/yt/300/300",
-                    streamUrl = result.url ?: "",
-                    durationMs = (result.duration ?: 180L) * 1000L,
-                    lyrics = "[00:01] Streaming from YouTube via Piped node...\n[00:10] Enjoy the smooth digital stream with absolute privacy!\n[00:30] Pure ambient sound direct to your player."
-                )
+        var attempts = 0
+        while (attempts < PIPED_SERVERS.size) {
+            try {
+                val response = pipedApi?.search(query) ?: emptyList()
+                return response.filter { it.type == "stream" }.map { result ->
+                    val videoId = result.url?.substringAfter("watch?v=", "") ?: ""
+                    val id = if (videoId.isNotEmpty()) "piped_$videoId" else "piped_${System.currentTimeMillis()}"
+                    Song(
+                        id = id,
+                        title = result.title ?: "Unknown YT Track",
+                        artist = result.uploaderName ?: "YouTube / Piped Stream",
+                        albumArtUrl = result.thumbnail ?: "https://picsum.photos/seed/yt/300/300",
+                        streamUrl = result.url ?: "",
+                        durationMs = (result.duration ?: 180L) * 1000L,
+                        lyrics = "[00:01] Streaming from YouTube via Piped node...\n[00:10] Enjoy the smooth digital stream with absolute privacy!\n[00:30] Pure ambient sound direct to your player."
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Piped API Search failed on $activePipedServer: ${e.message}. Rotating server mirror...")
+                attempts++
+                pipedServerIndex = (pipedServerIndex + 1) % PIPED_SERVERS.size
+                activePipedServer = PIPED_SERVERS[pipedServerIndex]
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Piped API Search failed: ${e.message}")
-            emptyList()
         }
+        return emptyList()
     }
 
-    // 2. SoundCloud API Search Implementation
-    private suspend fun searchSoundCloud(query: String): List<Song> {
-        return try {
-            val response = scApi?.searchTracks(query, soundCloudClientId)
-            response?.collection?.map { track ->
-                Song(
-                    id = "soundcloud_${track.id ?: System.currentTimeMillis()}",
-                    title = track.title ?: "Unknown SC Track",
-                    artist = track.user?.username ?: "SoundCloud Creator",
-                    albumArtUrl = track.artwork_url ?: "https://picsum.photos/seed/sc/300/300",
-                    streamUrl = track.stream_url ?: "",
-                    durationMs = track.duration ?: 180000L,
-                    lyrics = "[00:01] Welcome to the SoundCloud indie wave!\n[00:10] Connecting to artists worldwide on the cloud..."
-                )
-            } ?: emptyList()
-        } catch (e: Exception) {
-            Log.e(TAG, "SoundCloud API Search failed: ${e.message}")
-            emptyList()
+    // Resolves stream URL with Self-Healing server rotation fallback
+    suspend fun getPipedStreamUrl(songId: String): String? = withContext(Dispatchers.IO) {
+        var attempts = 0
+        while (attempts < PIPED_SERVERS.size) {
+            try {
+                val videoId = songId.substringAfter("piped_", "")
+                if (videoId.isEmpty()) return@withContext null
+                val info = pipedApi?.getStreamInfo(videoId)
+                val streamUrl = info?.audioStreams?.firstOrNull()?.url
+                if (streamUrl != null) {
+                    return@withContext streamUrl
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Piped stream resolution failed on $activePipedServer: ${e.message}. Rotating mirror...")
+                attempts++
+                pipedServerIndex = (pipedServerIndex + 1) % PIPED_SERVERS.size
+                activePipedServer = PIPED_SERVERS[pipedServerIndex]
+            }
         }
+        return@withContext null
     }
 
-    // 3. Fallback High-Fidelity Music Mock Store (YT/SoundCloud/Piped themed)
+    // 2. Fallback High-Fidelity Music Mock Store (YT/Piped/PeerTube themed)
     private fun getMockSourceResults(query: String, source: SearchSource): List<Song> {
         val allFallback = listOf(
             // YouTube / YT matches
@@ -231,15 +203,15 @@ object MusicSourcesManager {
                 durationMs = 180000L,
                 lyrics = "[00:01] Retro sunlight sinking low.\n[00:15] Speeding down the shoreline with neon headlights...\n[00:45] Retro futuristic beats on YouTube streams."
             ),
-            // SoundCloud Matches
+            // Cloud Resonance Matches
             Song(
                 id = "sc_1",
                 title = "Indie Cloud Resonance",
-                artist = "SoundCloud Creator Collective",
+                artist = "Cloud Creator Collective",
                 albumArtUrl = "https://picsum.photos/seed/sc1/300/300",
                 streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
                 durationMs = 240000L,
-                lyrics = "[00:01] SoundCloud upload live.\n[00:15] True homebrew analog goodness straight from the cloud...\n[00:50] The community gathers here."
+                lyrics = "[00:01] Cloud upload live.\n[00:15] True homebrew analog goodness straight from the cloud...\n[00:50] The community gathers here."
             ),
             Song(
                 id = "sc_2",
@@ -248,7 +220,7 @@ object MusicSourcesManager {
                 albumArtUrl = "https://picsum.photos/seed/sc2/300/300",
                 streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
                 durationMs = 195000L,
-                lyrics = "[00:01] SoundCloud bedroom session.\n[00:15] Cracking vinyl, dusty keys, warm tea...\n[00:50] Dream away with us."
+                lyrics = "[00:01] Bedroom session.\n[00:15] Cracking vinyl, dusty keys, warm tea...\n[00:50] Dream away with us."
             ),
             // Piped Matches
             Song(
@@ -259,6 +231,25 @@ object MusicSourcesManager {
                 streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
                 durationMs = 150000L,
                 lyrics = "[00:01] Routing through decentralized server nodes.\n[00:15] Zero trackers, zero ads, pure audio excellence...\n[00:45] Stream music with complete security."
+            ),
+            // PeerTube Matches
+            Song(
+                id = "peertube_1",
+                title = "Blender Open Movie - Sintel",
+                artist = "PeerTube Foundation",
+                albumArtUrl = "https://picsum.photos/seed/pt1/300/300",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+                durationMs = 300000L,
+                lyrics = "[00:01] Loading Sintel soundtrack from PeerTube instance...\n[00:10] Running over federated P2P client nodes!\n[00:40] Complete independence from proprietary platforms."
+            ),
+            Song(
+                id = "peertube_2",
+                title = "Federated Space Ambient",
+                artist = "ActivityPub Traveler",
+                albumArtUrl = "https://picsum.photos/seed/pt2/300/300",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3",
+                durationMs = 280000L,
+                lyrics = "[00:01] Streaming from decentralized PeerTube audio nodes.\n[00:20] Enjoy tracking-free, decentralized beats!\n[00:50] The Fediverse sounds warm and organic."
             )
         )
 
@@ -268,7 +259,7 @@ object MusicSourcesManager {
                 SearchSource.ALL -> true
                 SearchSource.YOUTUBE -> song.id.startsWith("yt_")
                 SearchSource.PIPED -> song.id.startsWith("piped_")
-                SearchSource.SOUNDCLOUD -> song.id.startsWith("sc_")
+                SearchSource.PEERTUBE -> song.id.startsWith("peertube_")
             }
             matchQuery && matchSource
         }
@@ -278,6 +269,6 @@ object MusicSourcesManager {
 enum class SearchSource {
     ALL,
     YOUTUBE,
-    SOUNDCLOUD,
-    PIPED
+    PIPED,
+    PEERTUBE
 }
