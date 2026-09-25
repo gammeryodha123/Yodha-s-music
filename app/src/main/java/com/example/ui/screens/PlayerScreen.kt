@@ -63,10 +63,10 @@ fun PlayerScreen(
     var lyricLines by remember(song.id) { mutableStateOf<List<LyricLine>>(emptyList()) }
     var isLyricsLoading by remember(song.id) { mutableStateOf(true) }
 
-    LaunchedEffect(song.id) {
+    LaunchedEffect(song.id, song.title) {
         isLyricsLoading = true
         try {
-            lyricLines = lyricsRepository.fetchLyrics(song.id)
+            lyricLines = lyricsRepository.fetchLyrics(song)
         } catch (e: Exception) {
             lyricLines = emptyList()
         } finally {
@@ -288,6 +288,9 @@ fun PlayerScreen(
             LyricsView(
                 songId = song.id,
                 songTitle = song.title,
+                artistName = song.artist,
+                durationMs = song.durationMs,
+                songLyrics = song.lyrics,
                 playbackPositionMs = playbackPositionMs,
                 onSeek = onPositionChange,
                 onClose = { showLyricsFullScreen = false },

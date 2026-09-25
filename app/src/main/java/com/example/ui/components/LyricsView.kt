@@ -1,9 +1,10 @@
 package com.example.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,12 +13,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -36,18 +39,27 @@ fun LyricsView(
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    artistName: String? = "",
+    durationMs: Long = 180000L,
+    songLyrics: String? = "",
     lyricsRepository: LyricsRepository = remember { LyricsRepository() }
 ) {
     var lyricLines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
 
-    // Fetch lyrics when songId changes
-    LaunchedEffect(songId) {
+    // Fetch lyrics when song or details change
+    LaunchedEffect(songId, songTitle, artistName) {
         isLoading = true
         hasError = false
         try {
-            lyricLines = lyricsRepository.fetchLyrics(songId)
+            lyricLines = lyricsRepository.fetchLyrics(
+                songId = songId,
+                songTitle = songTitle,
+                artistName = artistName ?: "",
+                durationMs = durationMs,
+                songLyrics = songLyrics ?: ""
+            )
         } catch (e: Exception) {
             hasError = true
         } finally {
@@ -91,25 +103,42 @@ fun LyricsView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "LYRICS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "REAL-TIME SYNCED LYRICS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
                         text = songTitle,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1
                     )
+                    if (!artistName.isNullOrBlank()) {
+                        Text(
+                            text = artistName,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                            maxLines = 1
+                        )
+                    }
                 }
                 IconButton(
                     onClick = onClose,
@@ -138,9 +167,10 @@ fun LyricsView(
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Tuning lyrics frequency...",
+                            text = "Fetching synced lyrics from LrcLib API...",
                             fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
                     }
                 } else if (hasError || lyricLines.isEmpty()) {
@@ -162,24 +192,56 @@ fun LyricsView(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(vertical = 32.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         itemsIndexed(lyricLines) { index, line ->
                             val isActive = index == activeIndex
-                            val fontSize = if (isActive) 24.sp else 19.sp
-                            val fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal
-                            val textColor = if (isActive) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                            }
+
+                            val targetScale = if (isActive) 1.02f else 1.0f
+                            val animatedScale by animateFloatAsState(
+                                targetValue = targetScale,
+                                animationSpec = spring(dampingRatio = 0.7f),
+                                label = "scale"
+                            )
+
+                            val backgroundColor by animateColorAsState(
+                                targetValue = if (isActive) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                                } else {
+                                    Color.Transparent
+                                },
+                                label = "bgColor"
+                            )
+
+                            val textColor by animateColorAsState(
+                                targetValue = if (isActive) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+                                },
+                                label = "textColor"
+                            )
+
+                            val fontSize = if (isActive) 23.sp else 18.sp
+                            val fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Medium
 
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .scale(animatedScale)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(backgroundColor)
+                                    .then(
+                                        if (isActive) {
+                                            Modifier.border(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                        } else Modifier
+                                    )
                                     .clickable { onSeek(line.timeMs) }
-                                    .padding(vertical = 8.dp, horizontal = 12.dp)
+                                    .padding(vertical = 12.dp, horizontal = 16.dp)
                                     .testTag("lyric_line_$index")
                             ) {
                                 Text(
@@ -187,7 +249,7 @@ fun LyricsView(
                                     fontSize = fontSize,
                                     fontWeight = fontWeight,
                                     color = textColor,
-                                    lineHeight = 32.sp,
+                                    lineHeight = 30.sp,
                                     textAlign = TextAlign.Start,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -217,10 +279,10 @@ fun LyricsView(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Tap on any line to skip playback to that moment",
+                    text = "Tap on any line to jump playback directly to that timestamp",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
                 )
             }
         }

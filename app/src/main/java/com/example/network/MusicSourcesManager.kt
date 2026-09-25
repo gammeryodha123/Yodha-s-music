@@ -152,6 +152,7 @@ object MusicSourcesManager {
                 attempts++
                 pipedServerIndex = (pipedServerIndex + 1) % PIPED_SERVERS.size
                 activePipedServer = PIPED_SERVERS[pipedServerIndex]
+                rebuildRetrofit()
             }
         }
         return emptyList()
@@ -176,6 +177,7 @@ object MusicSourcesManager {
                 attempts++
                 pipedServerIndex = (pipedServerIndex + 1) % PIPED_SERVERS.size
                 activePipedServer = PIPED_SERVERS[pipedServerIndex]
+                rebuildRetrofit()
             }
         }
         return@withContext null
@@ -202,25 +204,6 @@ object MusicSourcesManager {
                 streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
                 durationMs = 180000L,
                 lyrics = "[00:01] Retro sunlight sinking low.\n[00:15] Speeding down the shoreline with neon headlights...\n[00:45] Retro futuristic beats on YouTube streams."
-            ),
-            // Cloud Resonance Matches
-            Song(
-                id = "sc_1",
-                title = "Indie Cloud Resonance",
-                artist = "Cloud Creator Collective",
-                albumArtUrl = "https://picsum.photos/seed/sc1/300/300",
-                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-                durationMs = 240000L,
-                lyrics = "[00:01] Cloud upload live.\n[00:15] True homebrew analog goodness straight from the cloud...\n[00:50] The community gathers here."
-            ),
-            Song(
-                id = "sc_2",
-                title = "Bedroom Lofi Beats",
-                artist = "The Cloud Alchemist",
-                albumArtUrl = "https://picsum.photos/seed/sc2/300/300",
-                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-                durationMs = 195000L,
-                lyrics = "[00:01] Bedroom session.\n[00:15] Cracking vinyl, dusty keys, warm tea...\n[00:50] Dream away with us."
             ),
             // Piped Matches
             Song(
