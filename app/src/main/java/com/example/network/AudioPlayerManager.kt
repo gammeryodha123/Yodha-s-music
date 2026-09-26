@@ -109,21 +109,25 @@ object AudioPlayerManager {
 
     private suspend fun resolveStreamUrl(context: Context, song: Song): String? = withContext(Dispatchers.IO) {
         return@withContext when {
+            // Standard static / direct streaming URL
+            song.streamUrl.isNotBlank() -> {
+                song.streamUrl
+            }
             // Resolve YouTube / Piped direct audio stream URL
             song.id.startsWith("piped_") -> {
                 val directUrl = MusicSourcesManager.getPipedStreamUrl(song.id)
-                // Fallback to high quality direct stream URL or test URL if node fails
-                directUrl ?: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+                directUrl ?: getFallbackStreamUrl(song.id)
             }
-            // Standard static / direct streaming URL
-            song.streamUrl.isNotEmpty() -> {
-                song.streamUrl
-            }
-            // Safety local fallback URL
+            // Safety local fallback URL derived deterministically from song ID
             else -> {
-                "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+                getFallbackStreamUrl(song.id.ifEmpty { song.title })
             }
         }
+    }
+
+    private fun getFallbackStreamUrl(key: String): String {
+        val index = (Math.abs(key.hashCode()) % 16) + 1
+        return "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-$index.mp3"
     }
 
     fun togglePlayPause() {

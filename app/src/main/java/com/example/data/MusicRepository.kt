@@ -27,16 +27,16 @@ class MusicRepository {
         )
 
         val masterSongList = listOf(
-            Song("1", "Neon Dreams", "Synthwave Yodha", "https://picsum.photos/seed/s1/300/300", "", 210000),
-            Song("2", "Acoustic Sunrise", "Chill Vibes", "https://picsum.photos/seed/s2/300/300", "", 180000),
-            Song("3", "Cyberpunk Echoes", "Neo-Tokyo", "https://picsum.photos/seed/s3/300/300", "", 240000),
-            Song("4", "Lofi Beats", "Study Girl", "https://picsum.photos/seed/s4/300/300", "", 150000),
-            Song("5", "Midnight Drive", "Electro Spark", "https://picsum.photos/seed/s5/300/300", "", 195000),
-            Song("6", "Summer Breeze", "Sunkissed", "https://picsum.photos/seed/s6/300/300", "", 165000),
-            Song("7", "Electric Hearts", "Synth City", "https://picsum.photos/seed/s7/300/300", "", 220000),
-            Song("8", "Coffee Shop Jams", "Lofi Master", "https://picsum.photos/seed/s8/300/300", "", 140000),
-            Song("9", "Rainy Nights", "Cozy Waves", "https://picsum.photos/seed/s9/300/300", "", 185000),
-            Song("10", "Techno Pulse", "Digital God", "https://picsum.photos/seed/s10/300/300", "", 250000)
+            Song("1", "Neon Dreams", "Synthwave Yodha", "https://picsum.photos/seed/s1/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 210000),
+            Song("2", "Acoustic Sunrise", "Chill Vibes", "https://picsum.photos/seed/s2/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", 180000),
+            Song("3", "Cyberpunk Echoes", "Neo-Tokyo", "https://picsum.photos/seed/s3/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", 240000),
+            Song("4", "Lofi Beats", "Study Girl", "https://picsum.photos/seed/s4/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", 150000),
+            Song("5", "Midnight Drive", "Electro Spark", "https://picsum.photos/seed/s5/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3", 195000),
+            Song("6", "Summer Breeze", "Sunkissed", "https://picsum.photos/seed/s6/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3", 165000),
+            Song("7", "Electric Hearts", "Synth City", "https://picsum.photos/seed/s7/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3", 220000),
+            Song("8", "Coffee Shop Jams", "Lofi Master", "https://picsum.photos/seed/s8/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3", 140000),
+            Song("9", "Rainy Nights", "Cozy Waves", "https://picsum.photos/seed/s9/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3", 185000),
+            Song("10", "Techno Pulse", "Digital God", "https://picsum.photos/seed/s10/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3", 250000)
         )
 
         // Flow of recent search queries from Room
