@@ -16,7 +16,36 @@ import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 // -----------------------------------------------------
-// 1. Piped API Models & Retrofit Interface
+// 1. iTunes Music API Models & Retrofit Interface
+// -----------------------------------------------------
+@JsonClass(generateAdapter = true)
+data class ITunesSongResult(
+    val trackId: Long? = null,
+    val trackName: String? = null,
+    val artistName: String? = null,
+    val collectionName: String? = null,
+    val artworkUrl100: String? = null,
+    val previewUrl: String? = null,
+    val trackTimeMillis: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ITunesSearchResponse(
+    val resultCount: Int? = null,
+    val results: List<ITunesSongResult>? = null
+)
+
+interface ITunesApiService {
+    @GET("search")
+    suspend fun searchSongs(
+        @Query("term") term: String,
+        @Query("entity") entity: String = "song",
+        @Query("limit") limit: Int = 30
+    ): ITunesSearchResponse
+}
+
+// -----------------------------------------------------
+// 2. Piped API Models & Retrofit Interface
 // -----------------------------------------------------
 @JsonClass(generateAdapter = true)
 data class PipedSearchResult(
@@ -55,7 +84,7 @@ interface PipedApiService {
 }
 
 // -----------------------------------------------------
-// 3. Unified Music Sources Manager with Self-Healing Rotation
+// 3. Unified Music Sources Manager with Multi-API Integration & Self-Healing Rotation
 // -----------------------------------------------------
 object MusicSourcesManager {
     private const val TAG = "MusicSourcesManager"
@@ -77,10 +106,11 @@ object MusicSourcesManager {
         .build()
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
         .build()
 
+    private var iTunesApi: ITunesApiService? = null
     private var pipedApi: PipedApiService? = null
 
     init {
@@ -89,6 +119,13 @@ object MusicSourcesManager {
 
     private fun rebuildRetrofit() {
         try {
+            val iTunesRetrofit = Retrofit.Builder()
+                .baseUrl("https://itunes.apple.com/")
+                .client(okHttpClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build()
+            iTunesApi = iTunesRetrofit.create(ITunesApiService::class.java)
+
             val pipedRetrofit = Retrofit.Builder()
                 .baseUrl(activePipedServer)
                 .client(okHttpClient)
@@ -106,27 +143,59 @@ object MusicSourcesManager {
 
         val results = mutableListOf<Song>()
 
-        when (source) {
-            SearchSource.ALL -> {
-                results.addAll(searchPiped(query))
-            }
-            SearchSource.YOUTUBE, SearchSource.PIPED -> {
-                results.addAll(searchPiped(query))
-            }
-            SearchSource.PEERTUBE -> {
-                // Handled via offline high-fidelity mock stream fallback
-            }
+        // 1. Live iTunes Music Search (returns real songs, artist names, artwork, and audio streams for any artist/song)
+        if (source == SearchSource.ALL || source == SearchSource.YOUTUBE) {
+            val iTunesResults = searchITunes(query)
+            results.addAll(iTunesResults)
         }
 
-        // Fallback to offline/structured mock list if online APIs return no matches (rate limit/network fail)
-        if (results.isEmpty()) {
-            results.addAll(getMockSourceResults(query, source))
+        // 2. YouTube / Piped API Search
+        if (source == SearchSource.ALL || source == SearchSource.PIPED || source == SearchSource.YOUTUBE) {
+            val pipedResults = searchPiped(query)
+            results.addAll(pipedResults)
         }
 
-        return@withContext results
+        // De-duplicate results by title + artist
+        val uniqueResults = results.distinctBy { "${it.title.lowercase()}_${it.artist.lowercase()}" }
+
+        // Fallback to offline/structured mock list if online APIs return no matches
+        if (uniqueResults.isEmpty()) {
+            return@withContext getMockSourceResults(query, source)
+        }
+
+        return@withContext uniqueResults
     }
 
-    // 1. YouTube / Piped API Search Implementation with Self-Healing Server Mirror Rotation
+    // iTunes Music API Search Implementation
+    private suspend fun searchITunes(query: String): List<Song> {
+        return try {
+            val response = iTunesApi?.searchSongs(term = query, limit = 25)
+            val tracks = response?.results ?: emptyList()
+            tracks.filter { !it.trackName.isNullOrBlank() && !it.previewUrl.isNullOrBlank() }.map { track ->
+                val highResArtwork = track.artworkUrl100?.replace("100x100bb", "500x500bb")
+                    ?: "https://picsum.photos/seed/${track.trackId ?: 0}/500/500"
+                
+                val trackTitle = track.trackName ?: "Unknown Song"
+                val artistName = track.artistName ?: "Unknown Artist"
+                val albumName = track.collectionName ?: "Single"
+
+                Song(
+                    id = "itunes_${track.trackId ?: System.currentTimeMillis()}",
+                    title = trackTitle,
+                    artist = artistName,
+                    albumArtUrl = highResArtwork,
+                    streamUrl = track.previewUrl ?: "",
+                    durationMs = track.trackTimeMillis ?: 180000L,
+                    lyrics = "[00:01] Now playing $trackTitle by $artistName\n[00:12] Album: $albumName\n[00:25] High-fidelity audio stream from iTunes Music global catalog."
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "iTunes API search failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // YouTube / Piped API Search Implementation with Self-Healing Server Mirror Rotation
     private suspend fun searchPiped(query: String): List<Song> {
         var attempts = 0
         while (attempts < PIPED_SERVERS.size) {
@@ -138,7 +207,7 @@ object MusicSourcesManager {
                     Song(
                         id = id,
                         title = result.title ?: "Unknown YT Track",
-                        artist = result.uploaderName ?: "YouTube / Piped Stream",
+                        artist = result.uploaderName ?: "YouTube Stream",
                         albumArtUrl = result.thumbnail ?: "https://picsum.photos/seed/yt/300/300",
                         streamUrl = result.url ?: "",
                         durationMs = (result.duration ?: 180L) * 1000L,
@@ -183,10 +252,9 @@ object MusicSourcesManager {
         return@withContext null
     }
 
-    // 2. Fallback High-Fidelity Music Mock Store (YT/Piped/PeerTube themed)
+    // Fallback High-Fidelity Music Mock Store
     private fun getMockSourceResults(query: String, source: SearchSource): List<Song> {
         val allFallback = listOf(
-            // YouTube / YT matches
             Song(
                 id = "yt_1",
                 title = "Cyber Ambient YT-Stream",
@@ -205,7 +273,6 @@ object MusicSourcesManager {
                 durationMs = 180000L,
                 lyrics = "[00:01] Retro sunlight sinking low.\n[00:15] Speeding down the shoreline with neon headlights...\n[00:45] Retro futuristic beats on YouTube streams."
             ),
-            // Piped Matches
             Song(
                 id = "piped_1",
                 title = "De-googled Privacy Jams",
@@ -215,7 +282,6 @@ object MusicSourcesManager {
                 durationMs = 150000L,
                 lyrics = "[00:01] Routing through decentralized server nodes.\n[00:15] Zero trackers, zero ads, pure audio excellence...\n[00:45] Stream music with complete security."
             ),
-            // PeerTube Matches
             Song(
                 id = "peertube_1",
                 title = "Blender Open Movie - Sintel",
@@ -224,15 +290,6 @@ object MusicSourcesManager {
                 streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
                 durationMs = 300000L,
                 lyrics = "[00:01] Loading Sintel soundtrack from PeerTube instance...\n[00:10] Running over federated P2P client nodes!\n[00:40] Complete independence from proprietary platforms."
-            ),
-            Song(
-                id = "peertube_2",
-                title = "Federated Space Ambient",
-                artist = "ActivityPub Traveler",
-                albumArtUrl = "https://picsum.photos/seed/pt2/300/300",
-                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3",
-                durationMs = 280000L,
-                lyrics = "[00:01] Streaming from decentralized PeerTube audio nodes.\n[00:20] Enjoy tracking-free, decentralized beats!\n[00:50] The Fediverse sounds warm and organic."
             )
         )
 
@@ -268,7 +325,7 @@ object MusicSourcesManager {
             generated.add(
                 Song(
                     id = trackId,
-                    title = "$cleanQuery - Session #$i",
+                    title = "$cleanQuery - Track #$i",
                     artist = sampleArtists[(Math.abs(seed + i)) % sampleArtists.size],
                     albumArtUrl = "https://picsum.photos/seed/${Math.abs(seed + i)}/300/300",
                     streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-$soundHelixNum.mp3",

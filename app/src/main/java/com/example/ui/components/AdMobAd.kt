@@ -20,7 +20,7 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 @Composable
 fun AdMobBannerAd(
     modifier: Modifier = Modifier,
-    adUnitId: String = "ca-app-pub-1565038231841255/7148486913" // Production Banner ID
+    adUnitId: String = "ca-app-pub-1565038231841255/5937342019" // User Created Banner ID
 ) {
     AndroidView(
         modifier = modifier
