@@ -1,7 +1,10 @@
 package com.example.network
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -9,6 +12,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.model.Song
+import com.example.service.MusicPlaybackService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +22,7 @@ object AudioPlayerManager {
     private const val TAG = "AudioPlayerManager"
 
     private var exoPlayer: ExoPlayer? = null
+    private var serviceContext: Context? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
 
@@ -40,9 +45,73 @@ object AudioPlayerManager {
     // Playlist Queue
     private var currentQueue: List<Song> = emptyList()
 
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            _isPlaying.value = isPlaying
+            if (isPlaying) {
+                startProgressTracker()
+            } else {
+                stopProgressTracker()
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            when (playbackState) {
+                Player.STATE_BUFFERING -> {
+                    _isLoading.value = true
+                }
+                Player.STATE_READY -> {
+                    _isLoading.value = false
+                    exoPlayer?.let { player ->
+                        _durationMs.value = player.duration.coerceAtLeast(0L)
+                    }
+                }
+                Player.STATE_ENDED -> {
+                    _isLoading.value = false
+                    handleCompletion()
+                }
+                Player.STATE_IDLE -> {
+                    _isLoading.value = false
+                }
+            }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            Log.e(TAG, "ExoPlayer Error: ${error.message}", error)
+            _isLoading.value = false
+            _isPlaying.value = false
+        }
+    }
+
+    fun attachPlayer(player: ExoPlayer, context: Context) {
+        exoPlayer?.removeListener(playerListener)
+        exoPlayer = player
+        serviceContext = context.applicationContext
+        player.addListener(playerListener)
+        _isPlaying.value = player.isPlaying
+        if (player.duration > 0) {
+            _durationMs.value = player.duration
+        }
+    }
+
+    fun detachPlayer() {
+        exoPlayer?.removeListener(playerListener)
+        exoPlayer = null
+        stopProgressTracker()
+        _isPlaying.value = false
+    }
+
     fun initialize(context: Context) {
         if (exoPlayer != null) return
         try {
+            // Start MusicPlaybackService to maintain persistent background playback session
+            val serviceIntent = Intent(context.applicationContext, MusicPlaybackService::class.java)
+            try {
+                ContextCompat.startForegroundService(context.applicationContext, serviceIntent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Starting foreground service via intent failed, fallback to direct binding: ${e.message}")
+            }
+
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .setUsage(C.USAGE_MEDIA)
@@ -51,45 +120,12 @@ object AudioPlayerManager {
             val player = ExoPlayer.Builder(context.applicationContext)
                 .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
                 .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build()
 
-            player.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    _isPlaying.value = isPlaying
-                    if (isPlaying) {
-                        startProgressTracker()
-                    } else {
-                        stopProgressTracker()
-                    }
-                }
-
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    when (playbackState) {
-                        Player.STATE_BUFFERING -> {
-                            _isLoading.value = true
-                        }
-                        Player.STATE_READY -> {
-                            _isLoading.value = false
-                            _durationMs.value = player.duration.coerceAtLeast(0L)
-                        }
-                        Player.STATE_ENDED -> {
-                            _isLoading.value = false
-                            handleCompletion()
-                        }
-                        Player.STATE_IDLE -> {
-                            _isLoading.value = false
-                        }
-                    }
-                }
-
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    Log.e(TAG, "ExoPlayer Error: ${error.message}", error)
-                    _isLoading.value = false
-                    _isPlaying.value = false
-                }
-            })
-
+            player.addListener(playerListener)
             exoPlayer = player
+            serviceContext = context.applicationContext
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize ExoPlayer: ${e.message}")
         }
@@ -109,9 +145,17 @@ object AudioPlayerManager {
                 _playbackPositionMs.value = 0L
                 stopProgressTracker()
 
+                // Start MusicPlaybackService if not running
+                val serviceIntent = Intent(context.applicationContext, MusicPlaybackService::class.java)
+                try {
+                    ContextCompat.startForegroundService(context.applicationContext, serviceIntent)
+                } catch (e: Exception) {
+                    Log.d(TAG, "Service start attempt: ${e.message}")
+                }
+
                 val player = exoPlayer ?: return@launch
 
-                // Resolve stream URL
+                // Resolve direct stream URL
                 val directUrl = resolveStreamUrl(context, song)
                 if (directUrl.isNullOrBlank()) {
                     Log.e(TAG, "Unable to resolve stream URL for song: ${song.title}")
@@ -122,10 +166,11 @@ object AudioPlayerManager {
                 val metadata = MediaMetadata.Builder()
                     .setTitle(song.title)
                     .setArtist(song.artist)
-                    .setArtworkUri(android.net.Uri.parse(song.albumArtUrl))
+                    .setArtworkUri(if (song.albumArtUrl.isNotBlank()) Uri.parse(song.albumArtUrl) else null)
                     .build()
 
                 val mediaItem = MediaItem.Builder()
+                    .setMediaId(song.id)
                     .setUri(directUrl)
                     .setMediaMetadata(metadata)
                     .build()
@@ -210,7 +255,7 @@ object AudioPlayerManager {
         if (song != null && currentQueue.isNotEmpty()) {
             val index = currentQueue.indexOfFirst { it.id == song.id }
             if (index != -1 && index + 1 < currentQueue.size) {
-                val ctx = com.example.database.AppDatabaseHelper.context
+                val ctx = serviceContext ?: com.example.database.AppDatabaseHelper.context
                 if (ctx != null) {
                     playNext(ctx)
                 }
