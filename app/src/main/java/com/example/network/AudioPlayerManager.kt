@@ -1,9 +1,13 @@
 package com.example.network
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.util.Log
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.example.model.Song
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 object AudioPlayerManager {
     private const val TAG = "AudioPlayerManager"
 
-    private var mediaPlayer: MediaPlayer? = null
+    private var exoPlayer: ExoPlayer? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
 
@@ -36,39 +40,58 @@ object AudioPlayerManager {
     // Playlist Queue
     private var currentQueue: List<Song> = emptyList()
 
-    init {
-        initializePlayer()
-    }
-
-    private fun initializePlayer() {
+    fun initialize(context: Context) {
+        if (exoPlayer != null) return
         try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setOnPreparedListener { mp ->
-                    _isLoading.value = false
-                    mp.start()
-                    _isPlaying.value = true
-                    _durationMs.value = mp.duration.toLong()
-                    startProgressTracker()
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .build()
+
+            val player = ExoPlayer.Builder(context.applicationContext)
+                .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+                .setHandleAudioBecomingNoisy(true)
+                .build()
+
+            player.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    _isPlaying.value = isPlaying
+                    if (isPlaying) {
+                        startProgressTracker()
+                    } else {
+                        stopProgressTracker()
+                    }
                 }
-                setOnCompletionListener {
-                    handleCompletion()
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> {
+                            _isLoading.value = true
+                        }
+                        Player.STATE_READY -> {
+                            _isLoading.value = false
+                            _durationMs.value = player.duration.coerceAtLeast(0L)
+                        }
+                        Player.STATE_ENDED -> {
+                            _isLoading.value = false
+                            handleCompletion()
+                        }
+                        Player.STATE_IDLE -> {
+                            _isLoading.value = false
+                        }
+                    }
                 }
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "MediaPlayer Error: what=$what, extra=$extra")
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    Log.e(TAG, "ExoPlayer Error: ${error.message}", error)
                     _isLoading.value = false
                     _isPlaying.value = false
-                    false
                 }
-            }
+            })
+
+            exoPlayer = player
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize MediaPlayer: ${e.message}")
+            Log.e(TAG, "Failed to initialize ExoPlayer: ${e.message}")
         }
     }
 
@@ -77,6 +100,7 @@ object AudioPlayerManager {
     }
 
     fun playSong(context: Context, song: Song) {
+        initialize(context)
         scope.launch {
             try {
                 _currentSong.value = song
@@ -85,21 +109,30 @@ object AudioPlayerManager {
                 _playbackPositionMs.value = 0L
                 stopProgressTracker()
 
-                // Reset and prep player
-                initializePlayer()
-                val player = mediaPlayer ?: return@launch
+                val player = exoPlayer ?: return@launch
 
-                // 1. Resolve direct stream URL dynamically based on source
+                // Resolve stream URL
                 val directUrl = resolveStreamUrl(context, song)
                 if (directUrl.isNullOrBlank()) {
-                    Log.e(TAG, "Unable to resolve playable stream URL for song: ${song.title}")
+                    Log.e(TAG, "Unable to resolve stream URL for song: ${song.title}")
                     _isLoading.value = false
                     return@launch
                 }
 
-                Log.d(TAG, "Playing resolved stream URL: $directUrl")
-                player.setDataSource(directUrl)
-                player.prepareAsync()
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setArtworkUri(android.net.Uri.parse(song.albumArtUrl))
+                    .build()
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(directUrl)
+                    .setMediaMetadata(metadata)
+                    .build()
+
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.playWhenReady = true
             } catch (e: Exception) {
                 Log.e(TAG, "Error playing song: ${e.message}")
                 _isLoading.value = false
@@ -109,19 +142,12 @@ object AudioPlayerManager {
 
     private suspend fun resolveStreamUrl(context: Context, song: Song): String? = withContext(Dispatchers.IO) {
         return@withContext when {
-            // Standard static / direct streaming URL
-            song.streamUrl.isNotBlank() -> {
-                song.streamUrl
-            }
-            // Resolve YouTube / Piped direct audio stream URL
+            song.streamUrl.isNotBlank() -> song.streamUrl
             song.id.startsWith("piped_") -> {
                 val directUrl = MusicSourcesManager.getPipedStreamUrl(song.id)
                 directUrl ?: getFallbackStreamUrl(song.id)
             }
-            // Safety local fallback URL derived deterministically from song ID
-            else -> {
-                getFallbackStreamUrl(song.id.ifEmpty { song.title })
-            }
+            else -> getFallbackStreamUrl(song.id.ifEmpty { song.title })
         }
     }
 
@@ -131,16 +157,12 @@ object AudioPlayerManager {
     }
 
     fun togglePlayPause() {
-        val player = mediaPlayer ?: return
+        val player = exoPlayer ?: return
         try {
             if (player.isPlaying) {
                 player.pause()
-                _isPlaying.value = false
-                stopProgressTracker()
             } else {
-                player.start()
-                _isPlaying.value = true
-                startProgressTracker()
+                player.play()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error toggling play/pause: ${e.message}")
@@ -148,9 +170,9 @@ object AudioPlayerManager {
     }
 
     fun seekTo(positionMs: Long) {
-        val player = mediaPlayer ?: return
+        val player = exoPlayer ?: return
         try {
-            player.seekTo(positionMs.toInt())
+            player.seekTo(positionMs)
             _playbackPositionMs.value = positionMs
         } catch (e: Exception) {
             Log.e(TAG, "Error seeking: ${e.message}")
@@ -184,7 +206,6 @@ object AudioPlayerManager {
         stopProgressTracker()
         _playbackPositionMs.value = _durationMs.value
 
-        // Auto play next song if queue is available
         val song = _currentSong.value
         if (song != null && currentQueue.isNotEmpty()) {
             val index = currentQueue.indexOfFirst { it.id == song.id }
@@ -201,9 +222,12 @@ object AudioPlayerManager {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
-                mediaPlayer?.let { mp ->
-                    if (mp.isPlaying) {
-                        _playbackPositionMs.value = mp.currentPosition.toLong()
+                exoPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
+                        if (player.duration > 0) {
+                            _durationMs.value = player.duration
+                        }
                     }
                 }
                 delay(500L)
@@ -218,8 +242,8 @@ object AudioPlayerManager {
 
     fun release() {
         stopProgressTracker()
-        mediaPlayer?.release()
-        mediaPlayer = null
+        exoPlayer?.release()
+        exoPlayer = null
         _isPlaying.value = false
     }
 }
