@@ -11,6 +11,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.example.data.LyricLine
+import com.example.data.LyricsRepository
 import com.example.model.Song
 import com.example.service.MusicPlaybackService
 import kotlinx.coroutines.*
@@ -25,6 +27,8 @@ object AudioPlayerManager {
     private var serviceContext: Context? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
+    private var lyricsJob: Job? = null
+    private val lyricsRepository = LyricsRepository()
 
     // Player State Flows
     private val _currentSong = MutableStateFlow<Song?>(null)
@@ -41,6 +45,13 @@ object AudioPlayerManager {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // Backend Initialized Lyrics Flows
+    private val _currentLyrics = MutableStateFlow<List<LyricLine>>(emptyList())
+    val currentLyrics: StateFlow<List<LyricLine>> = _currentLyrics.asStateFlow()
+
+    private val _isLyricsLoading = MutableStateFlow(false)
+    val isLyricsLoading: StateFlow<Boolean> = _isLyricsLoading.asStateFlow()
 
     // Playlist Queue
     private var currentQueue: List<Song> = emptyList()
@@ -137,6 +148,10 @@ object AudioPlayerManager {
 
     fun playSong(context: Context, song: Song) {
         initialize(context)
+        
+        // Asynchronously initialize lyrics in backend
+        initializeBackendLyrics(song)
+
         scope.launch {
             try {
                 _currentSong.value = song
@@ -181,6 +196,24 @@ object AudioPlayerManager {
             } catch (e: Exception) {
                 Log.e(TAG, "Error playing song: ${e.message}")
                 _isLoading.value = false
+            }
+        }
+    }
+
+    private fun initializeBackendLyrics(song: Song) {
+        lyricsJob?.cancel()
+        _currentLyrics.value = emptyList()
+        _isLyricsLoading.value = true
+
+        lyricsJob = scope.launch(Dispatchers.IO) {
+            try {
+                val fetched = lyricsRepository.fetchLyrics(song)
+                _currentLyrics.value = fetched
+                Log.d(TAG, "Backend initialized ${fetched.size} lyric lines for ${song.title}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing lyrics in backend: ${e.message}")
+            } finally {
+                _isLyricsLoading.value = false
             }
         }
     }
@@ -287,6 +320,7 @@ object AudioPlayerManager {
 
     fun release() {
         stopProgressTracker()
+        lyricsJob?.cancel()
         exoPlayer?.release()
         exoPlayer = null
         _isPlaying.value = false

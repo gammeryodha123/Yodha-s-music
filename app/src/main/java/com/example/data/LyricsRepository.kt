@@ -30,7 +30,7 @@ class LyricsRepository {
     }
 
     /**
-     * Primary fetcher supporting LrcLib API with LRC timestamp parsing & fallback generation.
+     * Primary fetcher supporting LrcLib API, NetEase API with LRC timestamp parsing & fallback generation.
      */
     suspend fun fetchLyrics(
         songId: String,
@@ -87,7 +87,7 @@ class LyricsRepository {
                 Log.w(TAG, "LrcLib direct get failed for $cleanTitle: ${e.message}")
             }
 
-            // Fallback API call: Search query endpoint
+            // Fallback API call: LrcLib Search query endpoint
             try {
                 val query = if (!cleanArtist.isNullOrEmpty()) "$cleanTitle $cleanArtist" else cleanTitle
                 val searchResults = LrcLibClient.api.searchLyrics(query)
@@ -108,6 +108,26 @@ class LyricsRepository {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "LrcLib search failed for $cleanTitle: ${e.message}")
+            }
+
+            // Secondary Fallback API: NetEase Cloud Music API
+            try {
+                val query = if (!cleanArtist.isNullOrEmpty()) "$cleanTitle $cleanArtist" else cleanTitle
+                val searchResponse = LrcLibClient.netEaseApi.searchSong(query = query, limit = 3)
+                val songMatch = searchResponse.result?.songs?.firstOrNull()
+                if (songMatch != null) {
+                    val lyricResp = LrcLibClient.netEaseApi.getLyric(songId = songMatch.id)
+                    val lrcStr = lyricResp.lrc?.lyric
+                    if (!lrcStr.isNullOrBlank()) {
+                        val parsed = parseLrcLyrics(lrcStr)
+                        if (parsed.isNotEmpty()) {
+                            Log.d(TAG, "Successfully fetched NetEase lyrics for $cleanTitle")
+                            return@withContext parsed
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "NetEase lyrics search failed for $cleanTitle: ${e.message}")
             }
         }
 

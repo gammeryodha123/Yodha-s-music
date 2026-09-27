@@ -33,6 +33,7 @@ import com.example.data.LyricLine
 import com.example.data.LyricsRepository
 import com.example.data.MusicRepository
 import com.example.model.Song
+import com.example.network.AudioPlayerManager
 import com.example.ui.components.LyricsView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,19 +61,21 @@ fun PlayerScreen(
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
 
     val lyricsRepository = remember { LyricsRepository() }
-    var lyricLines by remember(song.id) { mutableStateOf<List<LyricLine>>(emptyList()) }
-    var isLyricsLoading by remember(song.id) { mutableStateOf(true) }
+    val backendLyrics by AudioPlayerManager.currentLyrics.collectAsState()
+    
+    var fallbackLyricLines by remember(song.id) { mutableStateOf<List<LyricLine>>(emptyList()) }
 
     LaunchedEffect(song.id, song.title) {
-        isLyricsLoading = true
-        try {
-            lyricLines = lyricsRepository.fetchLyrics(song)
-        } catch (e: Exception) {
-            lyricLines = emptyList()
-        } finally {
-            isLyricsLoading = false
+        if (backendLyrics.isEmpty()) {
+            try {
+                fallbackLyricLines = lyricsRepository.fetchLyrics(song)
+            } catch (e: Exception) {
+                fallbackLyricLines = emptyList()
+            }
         }
     }
+
+    val lyricLines = if (backendLyrics.isNotEmpty()) backendLyrics else fallbackLyricLines
 
     val activeIndex = remember(lyricLines, playbackPositionMs) {
         val index = lyricLines.indexOfLast { it.timeMs <= playbackPositionMs }
