@@ -20,28 +20,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Programmatically initialize Firebase with the correct active project options
+        // Programmatically initialize Firebase with the project options from google-services.json
         try {
             val options = com.google.firebase.FirebaseOptions.Builder()
-                .setApiKey("AIzaSyAcwyg4E4bMwqiGodKhzZXluwkiC7WNCDQ")
-                .setApplicationId("1:684033752161:web:42fdec3268ee81e3c87e20")
-                .setProjectId("circular-hangar-csmzh")
-                .setStorageBucket("circular-hangar-csmzh.firebasestorage.app")
+                .setApiKey("AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg")
+                .setApplicationId("1:1058333427757:android:6aed4f05765cc8b70510a4")
+                .setProjectId("yodha-music-67")
+                .setStorageBucket("yodha-music-67.firebasestorage.app")
                 .build()
             
             if (com.google.firebase.FirebaseApp.getApps(this).isEmpty()) {
                 com.google.firebase.FirebaseApp.initializeApp(this, options)
-            } else {
-                try {
-                    com.google.firebase.FirebaseApp.getInstance().delete()
-                } catch (e: Exception) {
-                    // Ignore if delete fails
-                }
-                com.google.firebase.FirebaseApp.initializeApp(this, options)
             }
-            android.util.Log.d("MainActivity", "FirebaseApp successfully initialized programmatically.")
+            android.util.Log.d("MainActivity", "FirebaseApp successfully initialized for yodha-music-67.")
         } catch (e: Throwable) {
-            android.util.Log.e("MainActivity", "Failed to initialize FirebaseApp programmatically: ${e.message}")
+            android.util.Log.e("MainActivity", "FirebaseApp initialization status: ${e.message}")
         }
 
         // Initialize AppDatabaseHelper for Room Database local access
@@ -99,7 +92,11 @@ fun AppNavigation() {
             })
         }
         composable("main") {
-            MainScreen()
+            MainScreen(onLogout = {
+                navController.navigate("login") {
+                    popUpTo("main") { inclusive = true }
+                }
+            })
         }
     }
 }

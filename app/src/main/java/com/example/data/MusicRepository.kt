@@ -165,17 +165,32 @@ class MusicRepository {
         }
     }
 
-    private val auth: FirebaseAuth? by lazy {
-        try { FirebaseAuth.getInstance() } catch (e: Throwable) { null }
-    }
-    private val db: com.google.firebase.firestore.FirebaseFirestore? by lazy {
-        try {
-            val app = com.google.firebase.FirebaseApp.getInstance()
-            com.google.firebase.firestore.FirebaseFirestore.getInstance(app, "ai-studio-yodhasmusic-f0883535-73c2-4b29-8daf-ae7f3ff4d62e")
-        } catch (e: Throwable) {
-            try { com.google.firebase.firestore.FirebaseFirestore.getInstance() } catch (e2: Throwable) { null }
+    private val auth: FirebaseAuth?
+        get() {
+            return try {
+                FirebaseAuth.getInstance()
+            } catch (e: Throwable) {
+                null
+            }
         }
-    }
+
+    private val db: com.google.firebase.firestore.FirebaseFirestore?
+        get() {
+            return try {
+                val app = com.google.firebase.FirebaseApp.getInstance()
+                try {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance(app, "ai-studio-yodhasmusic-f0883535-73c2-4b29-8daf-ae7f3ff4d62e")
+                } catch (e: Throwable) {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance(app)
+                }
+            } catch (e2: Throwable) {
+                try {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                } catch (e3: Throwable) {
+                    null
+                }
+            }
+        }
 
     suspend fun getFeaturedPlaylists(): List<Playlist> {
         return try {
@@ -214,46 +229,39 @@ class MusicRepository {
         }
     }
 
+    fun getCurrentUserEmail(): String {
+        if (isDemoLoggedIn) return "demo@yodhasmusic.com"
+        return auth?.currentUser?.email ?: "Guest User"
+    }
+
+    fun getCurrentUserName(): String {
+        if (isDemoLoggedIn) return "Demo Warrior"
+        val user = auth?.currentUser
+        return user?.displayName ?: user?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() } ?: "Music Warrior"
+    }
+
     suspend fun signInWithEmail(email: String, pass: String) {
-        try {
-            val a = auth
-            if (a != null) {
-                a.signInWithEmailAndPassword(email, pass).await()
-                syncPlaylists()
-            } else {
-                throw Exception("Firebase Auth is uninitialized.")
-            }
-        } catch (e: Exception) {
-            isDemoLoggedIn = true // Fallback to local demo session
-        }
+        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
+        a.signInWithEmailAndPassword(email.trim(), pass).await()
+        isDemoLoggedIn = false
+        syncUserData()
     }
 
     suspend fun signUpWithEmail(email: String, pass: String) {
-        try {
-            val a = auth
-            if (a != null) {
-                a.createUserWithEmailAndPassword(email, pass).await()
-                syncPlaylists()
-            } else {
-                throw Exception("Firebase Auth is uninitialized.")
-            }
-        } catch (e: Exception) {
-            isDemoLoggedIn = true // Fallback to local demo session
-        }
+        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
+        a.createUserWithEmailAndPassword(email.trim(), pass).await()
+        isDemoLoggedIn = false
+        syncUserProfileToFirestore()
+        syncUserData()
     }
 
     suspend fun signInWithGoogle(idToken: String) {
-        try {
-            val a = auth
-            if (a != null) {
-                a.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
-                syncPlaylists()
-            } else {
-                throw Exception("Firebase Auth is uninitialized.")
-            }
-        } catch (e: Exception) {
-            isDemoLoggedIn = true // Fallback to local demo session
-        }
+        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        a.signInWithCredential(credential).await()
+        isDemoLoggedIn = false
+        syncUserProfileToFirestore()
+        syncUserData()
     }
 
     fun logout() {
@@ -317,11 +325,123 @@ class MusicRepository {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+
+            // Sync favorite to Firestore
+            syncFavoriteToFirestore(song, isLikedNow)
+            syncUserProfileToFirestore()
         }
     }
 
     fun isSongLiked(songId: String): Boolean {
         return likedSongs.any { it.id == songId }
+    }
+
+    // Unified User Profile, Favorites & Custom Playlists sync with Firestore
+    suspend fun syncUserData() {
+        val dbRef = db ?: return
+        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
+
+        // 1. Sync Favorites from Firestore user_favorites collection
+        try {
+            val favSnapshot = dbRef.collection("user_favorites")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+
+            val remoteFavorites = favSnapshot.documents.mapNotNull { doc ->
+                val id = doc.getString("songId") ?: doc.id
+                val title = doc.getString("title") ?: return@mapNotNull null
+                val artist = doc.getString("artist") ?: "Unknown"
+                val albumArtUrl = doc.getString("albumArtUrl") ?: ""
+                val streamUrl = doc.getString("streamUrl") ?: ""
+                val durationMs = (doc.get("durationMs") as? Number)?.toLong() ?: 0L
+                val lyrics = doc.getString("lyrics") ?: ""
+                Song(id, title, artist, albumArtUrl, streamUrl, durationMs, lyrics)
+            }
+
+            if (remoteFavorites.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    likedSongs.clear()
+                    likedSongs.addAll(remoteFavorites)
+                }
+                // Cache in local Room DB
+                val dbInstance = com.example.database.AppDatabaseHelper.database
+                remoteFavorites.forEach { s ->
+                    dbInstance.localSongDao().insertSong(
+                        com.example.database.LocalSongEntity(
+                            id = s.id,
+                            title = s.title,
+                            artist = s.artist,
+                            albumArtUrl = s.albumArtUrl,
+                            streamUrl = s.streamUrl,
+                            durationMs = s.durationMs,
+                            lyrics = s.lyrics,
+                            isLiked = true
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Sync Custom Playlists from Firestore
+        syncPlaylists()
+
+        // 3. Sync Profile state
+        syncUserProfileToFirestore()
+    }
+
+    private suspend fun syncFavoriteToFirestore(song: Song, isLiked: Boolean) {
+        val dbRef = db ?: return
+        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
+        val docId = "${userId}_${song.id}"
+        val docRef = dbRef.collection("user_favorites").document(docId)
+
+        try {
+            if (isLiked) {
+                val favData = hashMapOf(
+                    "userId" to userId,
+                    "userEmail" to (auth?.currentUser?.email ?: "demo@yodhasmusic.com"),
+                    "songId" to song.id,
+                    "title" to song.title,
+                    "artist" to song.artist,
+                    "albumArtUrl" to song.albumArtUrl,
+                    "streamUrl" to song.streamUrl,
+                    "durationMs" to song.durationMs,
+                    "lyrics" to (song.lyrics ?: ""),
+                    "likedAt" to System.currentTimeMillis()
+                )
+                docRef.set(favData).await()
+            } else {
+                docRef.delete().await()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    suspend fun syncUserProfileToFirestore() {
+        val dbRef = db ?: return
+        val currentUser = auth?.currentUser
+        val userId = currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
+        val email = currentUser?.email ?: if (isDemoLoggedIn) "demo@yodhasmusic.com" else "anonymous@yodhasmusic.com"
+        val displayName = currentUser?.displayName ?: email.substringBefore("@").replaceFirstChar { it.uppercase() }
+
+        val profileData = hashMapOf(
+            "uid" to userId,
+            "email" to email,
+            "displayName" to displayName,
+            "favoritesCount" to likedSongs.size,
+            "playlistsCount" to customPlaylists.filter { it.id != "liked" }.size,
+            "lastActiveAt" to System.currentTimeMillis()
+        )
+
+        try {
+            dbRef.collection("users").document(userId).set(profileData).await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     // Custom Playlists (with Firestore sync & local Room database offline backing)
@@ -551,6 +671,7 @@ class MusicRepository {
         )
         try {
             dbRef.collection("user_playlists").document(playlist.id).set(data).await()
+            syncUserProfileToFirestore()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -560,6 +681,7 @@ class MusicRepository {
         val dbRef = db ?: return
         try {
             dbRef.collection("user_playlists").document(playlistId).delete().await()
+            syncUserProfileToFirestore()
         } catch (e: Exception) {
             e.printStackTrace()
         }

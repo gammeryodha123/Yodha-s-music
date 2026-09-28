@@ -10,7 +10,10 @@ data class Song(
     val albumArtUrl: String = "",
     val streamUrl: String = "",
     val durationMs: Long = 0L,
-    val lyrics: String? = null
+    val lyrics: String? = null,
+    val localFilePath: String? = null,
+    val isDownloaded: Boolean = false,
+    val lastPlaybackPositionMs: Long = 0L
 )
 
 @JsonClass(generateAdapter = true)

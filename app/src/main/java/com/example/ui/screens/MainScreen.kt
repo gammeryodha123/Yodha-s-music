@@ -23,7 +23,9 @@ import com.example.network.AudioPlayerManager
 import com.example.ui.components.BottomPlayerBar
 
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    onLogout: () -> Unit = {}
+) {
     var selectedTab by remember { mutableStateOf(0) }
     var showPlayerFullScreen by remember { mutableStateOf(false) }
     var searchInitialSource by remember { mutableStateOf(com.example.network.SearchSource.ALL) }
@@ -147,7 +149,8 @@ fun MainScreen() {
                     )
                     2 -> LibraryScreen(
                         onSongSelected = playSongWithAd,
-                        repository = repository
+                        repository = repository,
+                        onLogout = onLogout
                     )
                     3 -> OpenSourceScreen(
                         onNavigateToSearchWithSource = { sourceName ->

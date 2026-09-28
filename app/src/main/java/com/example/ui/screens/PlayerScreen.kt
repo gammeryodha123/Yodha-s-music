@@ -10,10 +10,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -24,14 +27,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.DownloadState
 import com.example.data.LyricLine
 import com.example.data.LyricsRepository
 import com.example.data.MusicRepository
+import com.example.data.OfflineDownloadManager
 import com.example.model.Song
 import com.example.network.AudioPlayerManager
 import com.example.ui.components.LyricsView
@@ -82,6 +88,13 @@ fun PlayerScreen(
         if (index == -1 && lyricLines.isNotEmpty()) 0 else index
     }
 
+    val context = LocalContext.current
+    val downloadStates by OfflineDownloadManager.downloadStates.collectAsState()
+    val isDownloaded = remember(song.id, downloadStates) {
+        OfflineDownloadManager.isSongDownloaded(context, song.id)
+    }
+    val currentDownloadState = downloadStates[song.id]
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -98,13 +111,34 @@ fun PlayerScreen(
                 IconButton(onClick = onClose) {
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close", modifier = Modifier.size(32.dp))
                 }
-                Text(
-                    text = "NOW PLAYING",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "NOW PLAYING",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                    )
+                    if (isDownloaded) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OfflinePin,
+                                contentDescription = "Offline Available",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "Playing from Offline Storage",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
                 Box {
                     IconButton(onClick = { showPlaylistMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Options")
@@ -120,6 +154,15 @@ fun PlayerScreen(
                                 showAddToPlaylistDialog = true
                             }
                         )
+                        if (isDownloaded) {
+                            DropdownMenuItem(
+                                text = { Text("Remove Download") },
+                                onClick = {
+                                    showPlaylistMenu = false
+                                    OfflineDownloadManager.deleteDownloadedSong(context, song.id)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -157,16 +200,51 @@ fun PlayerScreen(
                     )
                 }
 
-                IconButton(
-                    onClick = onLikeToggle,
-                    modifier = Modifier.testTag("like_button")
-                ) {
-                    Icon(
-                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Like Song",
-                        tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(32.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Download Action Button
+                    IconButton(
+                        onClick = {
+                            if (isDownloaded) {
+                                OfflineDownloadManager.deleteDownloadedSong(context, song.id)
+                            } else if (currentDownloadState !is DownloadState.InProgress) {
+                                OfflineDownloadManager.downloadSong(context, song)
+                            }
+                        },
+                        modifier = Modifier.testTag("download_button")
+                    ) {
+                        when (currentDownloadState) {
+                            is DownloadState.InProgress -> {
+                                val progress = (currentDownloadState as DownloadState.InProgress).progressPercent
+                                CircularProgressIndicator(
+                                    progress = { progress / 100f },
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                                    contentDescription = if (isDownloaded) "Downloaded Offline" else "Download Offline",
+                                    tint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Like Button
+                    IconButton(
+                        onClick = onLikeToggle,
+                        modifier = Modifier.testTag("like_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Like Song",
+                            tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
             }
             

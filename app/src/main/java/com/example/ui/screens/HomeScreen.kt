@@ -32,12 +32,34 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val repository = remember { MusicRepository() }
-    var recentSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    val recentSongsFromDb by MusicRepository.getRecentlyPlayedSongs().collectAsState(initial = emptyList())
+    var fallbackRecentSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        recentSongs = repository.getRecentSongs()
+        fallbackRecentSongs = repository.getRecentSongs()
         playlists = repository.getFeaturedPlaylists()
+    }
+
+    val displayRecentSongs = remember(recentSongsFromDb, fallbackRecentSongs) {
+        if (recentSongsFromDb.isNotEmpty()) {
+            recentSongsFromDb.map { entity ->
+                Song(
+                    id = entity.id,
+                    title = entity.title,
+                    artist = entity.artist,
+                    albumArtUrl = entity.albumArtUrl,
+                    streamUrl = entity.streamUrl,
+                    durationMs = entity.durationMs,
+                    lyrics = entity.lyrics,
+                    lastPlaybackPositionMs = entity.lastPlaybackPositionMs,
+                    isDownloaded = entity.isDownloaded,
+                    localFilePath = entity.localFilePath
+                )
+            }
+        } else {
+            fallbackRecentSongs
+        }
     }
 
     LazyColumn(
@@ -61,15 +83,15 @@ fun HomeScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            if (recentSongs.isEmpty()) {
+            if (displayRecentSongs.isEmpty()) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
             } else {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(recentSongs) { song ->
-                        RecentSongItem(song = song, onClick = { onSongSelected(song, recentSongs) })
+                    items(displayRecentSongs) { song ->
+                        RecentSongItem(song = song, onClick = { onSongSelected(song, displayRecentSongs) })
                     }
                 }
             }
@@ -103,20 +125,39 @@ fun HomeScreen(
 
 @Composable
 fun RecentSongItem(song: Song, onClick: () -> Unit) {
+    val progressFraction = if (song.durationMs > 0L && song.lastPlaybackPositionMs > 0L) {
+        (song.lastPlaybackPositionMs.toFloat() / song.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
     Column(
         modifier = Modifier
             .width(120.dp)
             .clickable { onClick() }
             .testTag("recent_song_${song.id}")
     ) {
-        AsyncImage(
-            model = song.albumArtUrl,
-            contentDescription = song.title,
-            contentScale = ContentScale.Crop,
+        Box(
             modifier = Modifier
                 .size(120.dp)
                 .clip(RoundedCornerShape(8.dp))
-        )
+        ) {
+            AsyncImage(
+                model = song.albumArtUrl,
+                contentDescription = song.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (progressFraction > 0f) {
+                LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Black.copy(alpha = 0.5f)
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = song.title,

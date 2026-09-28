@@ -19,6 +19,8 @@ import com.example.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
@@ -164,19 +166,22 @@ fun LoginScreen(
                                 ""
                             }
 
-                            val finalWebClientId = if (webClientId.isNotEmpty()) {
+                            val finalWebClientId = if (webClientId.isNotBlank()) {
                                 webClientId
                             } else {
-                                "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com"
+                                "1058333427757-avmlama6291kspq79ttpliulo5vf82mi.apps.googleusercontent.com"
                             }
 
-                            if (finalWebClientId.isEmpty()) {
-                                viewModel.setAuthStateError("Google Sign-In is not configured yet. Make sure Google Sign-In is enabled in your Firebase console.")
-                                return@launch
+                            val googleIdOption = try {
+                                GetGoogleIdOption.Builder()
+                                    .setFilterByAuthorizedAccounts(false)
+                                    .setServerClientId(finalWebClientId)
+                                    .setAutoSelectEnabled(false)
+                                    .build()
+                            } catch (e: Throwable) {
+                                GetSignInWithGoogleOption.Builder(serverClientId = finalWebClientId)
+                                    .build()
                             }
-
-                            val googleIdOption = GetSignInWithGoogleOption.Builder(serverClientId = finalWebClientId)
-                                .build()
 
                             val request = GetCredentialRequest.Builder()
                                 .addCredentialOption(googleIdOption)
@@ -192,8 +197,10 @@ fun LoginScreen(
                             } else {
                                 viewModel.setAuthStateError("Unexpected credential type: ${credential.type}")
                             }
+                        } catch (e: GetCredentialCancellationException) {
+                            // User dismissed account selector dialog - no action needed
                         } catch (e: Exception) {
-                            viewModel.setAuthStateError("Google Sign-In failed: ${e.localizedMessage ?: "Unknown error"}")
+                            viewModel.setAuthStateError("Google Sign-In: ${e.localizedMessage ?: "Please try again or use email sign-in."}")
                         }
                     }
                 },

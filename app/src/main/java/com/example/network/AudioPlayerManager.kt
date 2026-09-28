@@ -170,12 +170,21 @@ object AudioPlayerManager {
 
                 val player = exoPlayer ?: return@launch
 
-                // Resolve direct stream URL
-                val directUrl = resolveStreamUrl(context, song)
-                if (directUrl.isNullOrBlank()) {
-                    Log.e(TAG, "Unable to resolve stream URL for song: ${song.title}")
-                    _isLoading.value = false
-                    return@launch
+                // 1. Check if song has been downloaded offline to local storage
+                val localFile = com.example.data.OfflineDownloadManager.getLocalAudioFile(context, song.id)
+                val isOfflineAvailable = localFile != null && localFile.exists() && localFile.length() > 0
+
+                val mediaUri: Uri = if (isOfflineAvailable) {
+                    Log.d(TAG, "Playing offline cached audio file: ${localFile!!.absolutePath}")
+                    Uri.fromFile(localFile)
+                } else {
+                    val directUrl = resolveStreamUrl(context, song)
+                    if (directUrl.isNullOrBlank()) {
+                        Log.e(TAG, "Unable to resolve stream URL for song: ${song.title}")
+                        _isLoading.value = false
+                        return@launch
+                    }
+                    Uri.parse(directUrl)
                 }
 
                 val metadata = MediaMetadata.Builder()
@@ -186,13 +195,30 @@ object AudioPlayerManager {
 
                 val mediaItem = MediaItem.Builder()
                     .setMediaId(song.id)
-                    .setUri(directUrl)
+                    .setUri(mediaUri)
                     .setMediaMetadata(metadata)
                     .build()
 
                 player.setMediaItem(mediaItem)
+
+                // 2. Check and restore saved playback progress from Room database
+                val savedProgress = com.example.data.OfflineDownloadManager.getSavedPlaybackProgress(song.id)
+                if (savedProgress > 2000L && (song.durationMs <= 0 || savedProgress < (song.durationMs - 5000L))) {
+                    Log.d(TAG, "Resuming ${song.title} from saved progress: ${savedProgress}ms")
+                    player.seekTo(savedProgress)
+                    _playbackPositionMs.value = savedProgress
+                }
+
                 player.prepare()
                 player.playWhenReady = true
+
+                // 3. Cache song metadata into Room
+                val updatedSong = song.copy(
+                    isDownloaded = isOfflineAvailable,
+                    localFilePath = localFile?.absolutePath
+                )
+                _currentSong.value = updatedSong
+                com.example.data.OfflineDownloadManager.cacheRecentlyPlayedSong(updatedSong, savedProgress)
             } catch (e: Exception) {
                 Log.e(TAG, "Error playing song: ${e.message}")
                 _isLoading.value = false
@@ -299,12 +325,27 @@ object AudioPlayerManager {
     private fun startProgressTracker() {
         progressJob?.cancel()
         progressJob = scope.launch {
+            var loopCount = 0
             while (isActive) {
                 exoPlayer?.let { player ->
                     if (player.isPlaying) {
-                        _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
+                        val currentPos = player.currentPosition.coerceAtLeast(0L)
+                        _playbackPositionMs.value = currentPos
                         if (player.duration > 0) {
                             _durationMs.value = player.duration
+                        }
+
+                        // Save progress every ~3 seconds (6 loops of 500ms)
+                        loopCount++
+                        if (loopCount % 6 == 0) {
+                            val activeSong = _currentSong.value
+                            if (activeSong != null) {
+                                com.example.data.OfflineDownloadManager.savePlaybackProgress(
+                                    songId = activeSong.id,
+                                    positionMs = currentPos,
+                                    durationMs = player.duration.coerceAtLeast(0L)
+                                )
+                            }
                         }
                     }
                 }
@@ -314,6 +355,16 @@ object AudioPlayerManager {
     }
 
     private fun stopProgressTracker() {
+        // Save current progress on stop
+        val activeSong = _currentSong.value
+        val player = exoPlayer
+        if (activeSong != null && player != null) {
+            com.example.data.OfflineDownloadManager.savePlaybackProgress(
+                songId = activeSong.id,
+                positionMs = player.currentPosition.coerceAtLeast(0L),
+                durationMs = player.duration.coerceAtLeast(0L)
+            )
+        }
         progressJob?.cancel()
         progressJob = null
     }

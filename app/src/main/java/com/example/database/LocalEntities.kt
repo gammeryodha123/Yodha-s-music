@@ -13,7 +13,13 @@ data class LocalSongEntity(
     val streamUrl: String,
     val durationMs: Long,
     val lyrics: String? = null,
-    val isLiked: Boolean = false
+    val isLiked: Boolean = false,
+    val isDownloaded: Boolean = false,
+    val localFilePath: String? = null,
+    val downloadProgress: Int = 0,
+    val lastPlaybackPositionMs: Long = 0L,
+    val lastPlayedAt: Long = 0L,
+    val cachedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "local_playlists")
@@ -40,5 +46,16 @@ data class RecentSongEntity(
     val streamUrl: String,
     val durationMs: Long,
     val lyrics: String? = null,
-    val playedAt: Long = System.currentTimeMillis()
+    val playedAt: Long = System.currentTimeMillis(),
+    val lastPlaybackPositionMs: Long = 0L,
+    val isDownloaded: Boolean = false,
+    val localFilePath: String? = null
+)
+
+@Entity(tableName = "playback_progress")
+data class PlaybackProgressEntity(
+    @PrimaryKey val songId: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAt: Long = System.currentTimeMillis()
 )
