@@ -40,6 +40,7 @@ import com.example.data.MusicRepository
 import com.example.data.OfflineDownloadManager
 import com.example.model.Song
 import com.example.network.AudioPlayerManager
+import com.example.network.MusixmatchHelper
 import com.example.ui.components.LyricsView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,7 +75,8 @@ fun PlayerScreen(
     LaunchedEffect(song.id, song.title) {
         if (backendLyrics.isEmpty()) {
             try {
-                fallbackLyricLines = lyricsRepository.fetchLyrics(song)
+                val result = lyricsRepository.fetchLyrics(song)
+                fallbackLyricLines = result.lines
             } catch (e: Exception) {
                 fallbackLyricLines = emptyList()
             }
@@ -147,6 +149,20 @@ fun PlayerScreen(
                         expanded = showPlaylistMenu,
                         onDismissRequest = { showPlaylistMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("View Synced Lyrics (LRCLIB)") },
+                            onClick = {
+                                showPlaylistMenu = false
+                                showLyricsFullScreen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Search on Musixmatch") },
+                            onClick = {
+                                showPlaylistMenu = false
+                                MusixmatchHelper.launchMusixmatch(context, song.title, song.artist)
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Add to Playlist") },
                             onClick = {

@@ -234,8 +234,8 @@ object AudioPlayerManager {
         lyricsJob = scope.launch(Dispatchers.IO) {
             try {
                 val fetched = lyricsRepository.fetchLyrics(song)
-                _currentLyrics.value = fetched
-                Log.d(TAG, "Backend initialized ${fetched.size} lyric lines for ${song.title}")
+                _currentLyrics.value = fetched.lines
+                Log.d(TAG, "Backend initialized ${fetched.lines.size} lyric lines for ${song.title}")
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing lyrics in backend: ${e.message}")
             } finally {
