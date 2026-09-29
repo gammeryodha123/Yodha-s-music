@@ -1,78 +1,42 @@
 package com.example.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
+
+val PrimaryColor = Color(0xFF6750A4)
+val SecondaryColor = Color(0xFF625B71)
+val DarkBackground = Color(0xFF141218)
+val LightBackground = Color(0xFFFEF7FF)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF1DB954), // Spotify Green vibe
-    secondary = Color(0xFF535353),
-    tertiary = Color(0xFFB3B3B3),
-    background = Color(0xFF121212),
-    surface = Color(0xFF181818),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White,
+    primary = Color(0xFFD0BCFF),
+    secondary = Color(0xFFCCC2DC),
+    background = DarkBackground,
+    surface = Color(0xFF211F26),
+    surfaceContainerHigh = Color(0xFF2B2930)
 )
 
-private val LightColorScheme = DarkColorScheme // Force dark theme
-
-private fun findActivity(context: android.content.Context): Activity? {
-    var currentContext = context
-    while (currentContext is android.content.ContextWrapper) {
-        if (currentContext is Activity) {
-            return currentContext
-        }
-        currentContext = currentContext.baseContext
-    }
-    return null
-}
+private val LightColorScheme = lightColorScheme(
+    primary = PrimaryColor,
+    secondary = SecondaryColor,
+    background = LightBackground,
+    surface = Color(0xFFF7F2FA),
+    surfaceContainerHigh = Color(0xFFF3EDF7)
+)
 
 @Composable
-fun AppTheme(
-    darkTheme: Boolean = true, // Force dark theme for music app
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false, // Disable dynamic to keep the custom brand
+fun MusicAppTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val activity = findActivity(view.context)
-            if (activity != null) {
-                val window = activity.window
-                window.statusBarColor = colorScheme.background.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-            }
-        }
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
         content = content
     )
 }

@@ -4,24 +4,18 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
 
 @Database(
     entities = [
-        LocalSongEntity::class, 
-        LocalPlaylistEntity::class,
-        RecentQueryEntity::class,
+        LocalSongEntity::class,
         RecentSongEntity::class,
         PlaybackProgressEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
-@TypeConverters(RoomTypeConverters::class)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun localSongDao(): LocalSongDao
-    abstract fun localPlaylistDao(): LocalPlaylistDao
-    abstract fun recentQueryDao(): RecentQueryDao
     abstract fun recentSongDao(): RecentSongDao
     abstract fun playbackProgressDao(): PlaybackProgressDao
 
@@ -42,21 +36,5 @@ abstract class MusicDatabase : RoomDatabase() {
                 instance
             }
         }
-    }
-}
-
-object AppDatabaseHelper {
-    private var applicationContext: Context? = null
-
-    fun init(context: Context) {
-        applicationContext = context.applicationContext
-    }
-
-    val context: Context?
-        get() = applicationContext
-
-    val database: MusicDatabase by lazy {
-        val context = applicationContext ?: throw IllegalStateException("AppDatabaseHelper is not initialized.")
-        MusicDatabase.getDatabase(context)
     }
 }

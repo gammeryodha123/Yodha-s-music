@@ -1,689 +1,96 @@
 package com.example.data
 
 import androidx.compose.runtime.mutableStateListOf
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.database.RecentSongEntity
 import com.example.model.Playlist
 import com.example.model.Song
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 
 class MusicRepository {
+
     companion object {
-        var isDemoLoggedIn = false
         val likedSongs = mutableStateListOf<Song>()
-        val customPlaylists = mutableStateListOf<Playlist>(
-            Playlist(
-                id = "liked",
-                name = "Liked Songs",
-                coverUrl = "https://picsum.photos/seed/liked/300/300",
-                description = "Your favorite tracks",
-                songs = emptyList()
-            )
-        )
+        val customPlaylists = mutableStateListOf<Playlist>()
 
-        val masterSongList = listOf(
-            Song("1", "Neon Dreams", "Synthwave Yodha", "https://picsum.photos/seed/s1/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 210000),
-            Song("2", "Acoustic Sunrise", "Chill Vibes", "https://picsum.photos/seed/s2/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", 180000),
-            Song("3", "Cyberpunk Echoes", "Neo-Tokyo", "https://picsum.photos/seed/s3/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", 240000),
-            Song("4", "Lofi Beats", "Study Girl", "https://picsum.photos/seed/s4/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", 150000),
-            Song("5", "Midnight Drive", "Electro Spark", "https://picsum.photos/seed/s5/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3", 195000),
-            Song("6", "Summer Breeze", "Sunkissed", "https://picsum.photos/seed/s6/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3", 165000),
-            Song("7", "Electric Hearts", "Synth City", "https://picsum.photos/seed/s7/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3", 220000),
-            Song("8", "Coffee Shop Jams", "Lofi Master", "https://picsum.photos/seed/s8/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3", 140000),
-            Song("9", "Rainy Nights", "Cozy Waves", "https://picsum.photos/seed/s9/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3", 185000),
-            Song("10", "Techno Pulse", "Digital God", "https://picsum.photos/seed/s10/300/300", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3", 250000)
-        )
-
-        // Flow of recent search queries from Room
-        fun getRecentSearchQueries(): kotlinx.coroutines.flow.Flow<List<com.example.database.RecentQueryEntity>> {
-            val db = com.example.database.AppDatabaseHelper.database
-            return db.recentQueryDao().getRecentQueries()
-        }
-
-        // Save a search query to Room
-        suspend fun saveSearchQuery(queryText: String) = withContext(Dispatchers.IO) {
-            if (queryText.isNotBlank()) {
-                val db = com.example.database.AppDatabaseHelper.database
-                db.recentQueryDao().insertQuery(com.example.database.RecentQueryEntity(queryText = queryText.trim()))
-            }
-        }
-
-        // Delete a search query from Room
-        suspend fun deleteSearchQuery(queryText: String) = withContext(Dispatchers.IO) {
-            val db = com.example.database.AppDatabaseHelper.database
-            db.recentQueryDao().deleteQuery(queryText)
-        }
-
-        // Clear all queries from Room
-        suspend fun clearSearchHistory() = withContext(Dispatchers.IO) {
-            val db = com.example.database.AppDatabaseHelper.database
-            db.recentQueryDao().clearAllQueries()
-        }
-
-        // Flow of recently played songs from Room
-        fun getRecentlyPlayedSongs(): kotlinx.coroutines.flow.Flow<List<com.example.database.RecentSongEntity>> {
-            val db = com.example.database.AppDatabaseHelper.database
-            return db.recentSongDao().getRecentSongs()
-        }
-
-        // Save a recently played song to Room
-        suspend fun saveRecentlyPlayedSong(song: Song) = withContext(Dispatchers.IO) {
-            val db = com.example.database.AppDatabaseHelper.database
-            db.recentSongDao().insertRecentSong(
-                com.example.database.RecentSongEntity(
-                    id = song.id,
-                    title = song.title,
-                    artist = song.artist,
-                    albumArtUrl = song.albumArtUrl,
-                    streamUrl = song.streamUrl,
-                    durationMs = song.durationMs,
-                    lyrics = song.lyrics
-                )
-            )
+        fun getRecentlyPlayedSongs(): Flow<List<RecentSongEntity>> {
+            return AppDatabaseHelper.database.recentSongDao().getRecentSongsFlow()
         }
     }
 
-    init {
-        loadLocalData()
-    }
-
-    private fun loadLocalData() {
-        CoroutineScope(Dispatchers.IO).launch {
-            var attempts = 0
-            while (attempts < 30) {
-                try {
-                    val db = com.example.database.AppDatabaseHelper.database
-                    
-                    // Observe liked songs reactively
-                    launch {
-                        db.localSongDao().getLikedSongs().collect { entities ->
-                            val songs = entities.map { entity ->
-                                Song(
-                                    id = entity.id,
-                                    title = entity.title,
-                                    artist = entity.artist,
-                                    albumArtUrl = entity.albumArtUrl,
-                                    streamUrl = entity.streamUrl,
-                                    durationMs = entity.durationMs,
-                                    lyrics = entity.lyrics
-                                )
-                            }
-                            withContext(Dispatchers.Main) {
-                                likedSongs.clear()
-                                likedSongs.addAll(songs)
-                                customPlaylists.replaceAll { playlist ->
-                                    if (playlist.id == "liked") {
-                                        playlist.copy(songs = songs)
-                                    } else {
-                                        playlist
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Observe custom playlists reactively
-                    launch {
-                        db.localPlaylistDao().getAllPlaylists().collect { entities ->
-                            val playlists = entities.map { entity ->
-                                Playlist(
-                                    id = entity.id,
-                                    name = entity.name,
-                                    coverUrl = entity.coverUrl,
-                                    description = entity.description,
-                                    songs = entity.songs
-                                )
-                            }
-                            withContext(Dispatchers.Main) {
-                                val likedPlaylist = customPlaylists.find { it.id == "liked" } ?: Playlist(
-                                    id = "liked",
-                                    name = "Liked Songs",
-                                    coverUrl = "https://picsum.photos/seed/liked/300/300",
-                                    description = "Your favorite tracks",
-                                    songs = likedSongs.toList()
-                                )
-                                customPlaylists.clear()
-                                customPlaylists.add(likedPlaylist)
-                                customPlaylists.addAll(playlists.filter { it.id != "liked" })
-                            }
-                        }
-                    }
-                    break
-                } catch (e: IllegalStateException) {
-                    attempts++
-                    kotlinx.coroutines.delay(100L)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    break
-                }
-            }
-        }
-    }
-
-    private val auth: FirebaseAuth?
-        get() {
-            return try {
-                FirebaseAuth.getInstance()
-            } catch (e: Throwable) {
-                null
-            }
-        }
-
-    private val db: com.google.firebase.firestore.FirebaseFirestore?
-        get() {
-            return try {
-                val app = com.google.firebase.FirebaseApp.getInstance()
-                try {
-                    com.google.firebase.firestore.FirebaseFirestore.getInstance(app, "ai-studio-yodhasmusic-f0883535-73c2-4b29-8daf-ae7f3ff4d62e")
-                } catch (e: Throwable) {
-                    com.google.firebase.firestore.FirebaseFirestore.getInstance(app)
-                }
-            } catch (e2: Throwable) {
-                try {
-                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                } catch (e3: Throwable) {
-                    null
-                }
-            }
-        }
-
-    suspend fun getFeaturedPlaylists(): List<Playlist> {
-        return try {
-            val snapshot = db?.collection("playlists")?.get()?.await()
-            val list = snapshot?.toObjects(Playlist::class.java) ?: emptyList()
-            if (list.isEmpty()) getFallbackPlaylists() else list
-        } catch (e: Exception) {
-            getFallbackPlaylists()
-        }
-    }
-
-    private fun getFallbackPlaylists(): List<Playlist> {
+    fun getSampleSongs(): List<Song> {
         return listOf(
-            Playlist("1", "Top Hits India", "https://picsum.photos/seed/p1/300/300", "The biggest hits from India.", masterSongList.take(4)),
-            Playlist("2", "Global Top 50", "https://picsum.photos/seed/p2/300/300", "What the world is listening to.", masterSongList.drop(4).take(3)),
-            Playlist("3", "Workout Warrior", "https://picsum.photos/seed/p3/300/300", "Get pumped with these beats.", masterSongList.takeLast(3))
-        )
-    }
-
-    suspend fun getRecentSongs(): List<Song> {
-        return try {
-            val snapshot = db?.collection("recent_songs")?.get()?.await()
-            val list = snapshot?.toObjects(Song::class.java) ?: emptyList()
-            if (list.isEmpty()) masterSongList.take(4) else list
-        } catch (e: Exception) {
-            masterSongList.take(4)
-        }
-    }
-
-    fun isUserLoggedIn(): Boolean {
-        if (isDemoLoggedIn) return true
-        return try {
-            auth?.currentUser != null
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun getCurrentUserEmail(): String {
-        if (isDemoLoggedIn) return "demo@yodhasmusic.com"
-        return auth?.currentUser?.email ?: "Guest User"
-    }
-
-    fun getCurrentUserName(): String {
-        if (isDemoLoggedIn) return "Demo Warrior"
-        val user = auth?.currentUser
-        return user?.displayName ?: user?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() } ?: "Music Warrior"
-    }
-
-    suspend fun signInWithEmail(email: String, pass: String) {
-        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
-        a.signInWithEmailAndPassword(email.trim(), pass).await()
-        isDemoLoggedIn = false
-        syncUserData()
-    }
-
-    suspend fun signUpWithEmail(email: String, pass: String) {
-        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
-        a.createUserWithEmailAndPassword(email.trim(), pass).await()
-        isDemoLoggedIn = false
-        syncUserProfileToFirestore()
-        syncUserData()
-    }
-
-    suspend fun signInWithGoogle(idToken: String) {
-        val a = auth ?: throw Exception("Firebase Auth is not available. Please verify connection.")
-        val credential = GoogleAuthProvider.getCredential(idToken, null)
-        a.signInWithCredential(credential).await()
-        isDemoLoggedIn = false
-        syncUserProfileToFirestore()
-        syncUserData()
-    }
-
-    fun logout() {
-        isDemoLoggedIn = false
-        try {
-            auth?.signOut()
-        } catch (e: Exception) {
-            // Ignored
-        }
-        // Clear playlists back to just Liked Songs
-        customPlaylists.clear()
-        customPlaylists.add(
-            Playlist(
-                id = "liked",
-                name = "Liked Songs",
-                coverUrl = "https://picsum.photos/seed/liked/300/300",
-                description = "Your favorite tracks",
-                songs = likedSongs.toList()
+            Song(
+                id = "1",
+                title = "Neon Dreams",
+                artist = "Synthwave Collective",
+                albumArtUrl = "https://picsum.photos/seed/music1/400/400",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+                durationMs = 210000L
+            ),
+            Song(
+                id = "2",
+                title = "Acoustic Sunrise",
+                artist = "Morning Coffee",
+                albumArtUrl = "https://picsum.photos/seed/music2/400/400",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+                durationMs = 195000L
+            ),
+            Song(
+                id = "3",
+                title = "Cyberpunk Echoes",
+                artist = "Future Sound",
+                albumArtUrl = "https://picsum.photos/seed/music3/400/400",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+                durationMs = 240000L
+            ),
+            Song(
+                id = "4",
+                title = "Lofi Chill Beats",
+                artist = "Chillhop Beats",
+                albumArtUrl = "https://picsum.photos/seed/music4/400/400",
+                streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+                durationMs = 180000L
             )
         )
     }
 
-    // Liked Songs / Favorites (Both Local SQLite Cache and Flow triggers)
+    fun getRecentSongs(): List<Song> = getSampleSongs()
+
+    fun getFeaturedPlaylists(): List<Playlist> {
+        val samples = getSampleSongs()
+        return listOf(
+            Playlist("p1", "Chill Vibes", "Relax and unwind", "https://picsum.photos/seed/p1/400/400", samples.take(2)),
+            Playlist("p2", "Electronic Beats", "Upbeat synthwave", "https://picsum.photos/seed/p2/400/400", samples.drop(2))
+        )
+    }
+
     fun toggleLikeSong(song: Song) {
-        if (likedSongs.any { it.id == song.id }) {
-            likedSongs.removeIf { it.id == song.id }
+        val existing = likedSongs.find { it.id == song.id }
+        if (existing != null) {
+            likedSongs.remove(existing)
         } else {
-            likedSongs.add(song)
-        }
-        // Keep Liked Songs playlist in sync in-memory
-        customPlaylists.replaceAll { playlist ->
-            if (playlist.id == "liked") {
-                playlist.copy(songs = likedSongs.toList())
-            } else {
-                playlist
-            }
-        }
-
-        // Persist change to local SQLite database asynchronously
-        val isLikedNow = likedSongs.any { it.id == song.id }
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val dbInstance = com.example.database.AppDatabaseHelper.database
-                val existingEntity = dbInstance.localSongDao().getSongById(song.id)
-                if (existingEntity != null) {
-                    dbInstance.localSongDao().updateLikedStatus(song.id, isLikedNow)
-                } else {
-                    dbInstance.localSongDao().insertSong(
-                        com.example.database.LocalSongEntity(
-                            id = song.id,
-                            title = song.title,
-                            artist = song.artist,
-                            albumArtUrl = song.albumArtUrl,
-                            streamUrl = song.streamUrl,
-                            durationMs = song.durationMs,
-                            lyrics = song.lyrics,
-                            isLiked = isLikedNow
-                        )
-                    )
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-
-            // Sync favorite to Firestore
-            syncFavoriteToFirestore(song, isLikedNow)
-            syncUserProfileToFirestore()
-        }
-    }
-
-    fun isSongLiked(songId: String): Boolean {
-        return likedSongs.any { it.id == songId }
-    }
-
-    // Unified User Profile, Favorites & Custom Playlists sync with Firestore
-    suspend fun syncUserData() {
-        val dbRef = db ?: return
-        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
-
-        // 1. Sync Favorites from Firestore user_favorites collection
-        try {
-            val favSnapshot = dbRef.collection("user_favorites")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-
-            val remoteFavorites = favSnapshot.documents.mapNotNull { doc ->
-                val id = doc.getString("songId") ?: doc.id
-                val title = doc.getString("title") ?: return@mapNotNull null
-                val artist = doc.getString("artist") ?: "Unknown"
-                val albumArtUrl = doc.getString("albumArtUrl") ?: ""
-                val streamUrl = doc.getString("streamUrl") ?: ""
-                val durationMs = (doc.get("durationMs") as? Number)?.toLong() ?: 0L
-                val lyrics = doc.getString("lyrics") ?: ""
-                Song(id, title, artist, albumArtUrl, streamUrl, durationMs, lyrics)
-            }
-
-            if (remoteFavorites.isNotEmpty()) {
-                withContext(Dispatchers.Main) {
-                    likedSongs.clear()
-                    likedSongs.addAll(remoteFavorites)
-                }
-                // Cache in local Room DB
-                val dbInstance = com.example.database.AppDatabaseHelper.database
-                remoteFavorites.forEach { s ->
-                    dbInstance.localSongDao().insertSong(
-                        com.example.database.LocalSongEntity(
-                            id = s.id,
-                            title = s.title,
-                            artist = s.artist,
-                            albumArtUrl = s.albumArtUrl,
-                            streamUrl = s.streamUrl,
-                            durationMs = s.durationMs,
-                            lyrics = s.lyrics,
-                            isLiked = true
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Sync Custom Playlists from Firestore
-        syncPlaylists()
-
-        // 3. Sync Profile state
-        syncUserProfileToFirestore()
-    }
-
-    private suspend fun syncFavoriteToFirestore(song: Song, isLiked: Boolean) {
-        val dbRef = db ?: return
-        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
-        val docId = "${userId}_${song.id}"
-        val docRef = dbRef.collection("user_favorites").document(docId)
-
-        try {
-            if (isLiked) {
-                val favData = hashMapOf(
-                    "userId" to userId,
-                    "userEmail" to (auth?.currentUser?.email ?: "demo@yodhasmusic.com"),
-                    "songId" to song.id,
-                    "title" to song.title,
-                    "artist" to song.artist,
-                    "albumArtUrl" to song.albumArtUrl,
-                    "streamUrl" to song.streamUrl,
-                    "durationMs" to song.durationMs,
-                    "lyrics" to (song.lyrics ?: ""),
-                    "likedAt" to System.currentTimeMillis()
-                )
-                docRef.set(favData).await()
-            } else {
-                docRef.delete().await()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    suspend fun syncUserProfileToFirestore() {
-        val dbRef = db ?: return
-        val currentUser = auth?.currentUser
-        val userId = currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
-        val email = currentUser?.email ?: if (isDemoLoggedIn) "demo@yodhasmusic.com" else "anonymous@yodhasmusic.com"
-        val displayName = currentUser?.displayName ?: email.substringBefore("@").replaceFirstChar { it.uppercase() }
-
-        val profileData = hashMapOf(
-            "uid" to userId,
-            "email" to email,
-            "displayName" to displayName,
-            "favoritesCount" to likedSongs.size,
-            "playlistsCount" to customPlaylists.filter { it.id != "liked" }.size,
-            "lastActiveAt" to System.currentTimeMillis()
-        )
-
-        try {
-            dbRef.collection("users").document(userId).set(profileData).await()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // Custom Playlists (with Firestore sync & local Room database offline backing)
-    suspend fun syncPlaylists() {
-        val dbRef = db ?: return
-        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else return
-        try {
-            val snapshot = dbRef.collection("user_playlists")
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-
-            val loadedList = snapshot.documents.mapNotNull { doc ->
-                val id = doc.getString("id") ?: ""
-                val name = doc.getString("name") ?: ""
-                val coverUrl = doc.getString("coverUrl") ?: ""
-                val description = doc.getString("description") ?: ""
-
-                val songsListRaw = doc.get("songs") as? List<Map<String, Any>> ?: emptyList()
-                val songs = songsListRaw.map { sMap ->
-                    Song(
-                        id = sMap["id"] as? String ?: "",
-                        title = sMap["title"] as? String ?: "",
-                        artist = sMap["artist"] as? String ?: "",
-                        albumArtUrl = sMap["albumArtUrl"] as? String ?: "",
-                        streamUrl = sMap["streamUrl"] as? String ?: "",
-                        durationMs = (sMap["durationMs"] as? Number)?.toLong() ?: 0L
-                    )
-                }
-                Playlist(
-                    id = id,
-                    name = name,
-                    coverUrl = coverUrl,
-                    description = description,
-                    songs = songs
-                )
-            }
-
-            val likedPlaylist = customPlaylists.find { it.id == "liked" } ?: Playlist(
-                id = "liked",
-                name = "Liked Songs",
-                coverUrl = "https://picsum.photos/seed/liked/300/300",
-                description = "Your favorite tracks",
-                songs = likedSongs.toList()
-            )
-
-            customPlaylists.clear()
-            customPlaylists.add(likedPlaylist)
-            customPlaylists.addAll(loadedList.filter { it.id != "liked" })
-
-            // Cache successfully loaded playlists locally in Room
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val localDb = com.example.database.AppDatabaseHelper.database
-                    loadedList.forEach { playlist ->
-                        localDb.localPlaylistDao().insertPlaylist(
-                            com.example.database.LocalPlaylistEntity(
-                                id = playlist.id,
-                                name = playlist.name,
-                                coverUrl = playlist.coverUrl,
-                                description = playlist.description,
-                                songs = playlist.songs
-                            )
-                        )
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun createPlaylist(name: String, description: String) {
-        val id = "custom_${System.currentTimeMillis()}"
-        val newPlaylist = Playlist(
-            id = id,
-            name = name,
-            coverUrl = "https://picsum.photos/seed/$id/300/300",
-            description = description,
-            songs = emptyList()
-        )
-        customPlaylists.add(newPlaylist)
-
-        // Save to Local SQLite DB via Room
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val localDb = com.example.database.AppDatabaseHelper.database
-                localDb.localPlaylistDao().insertPlaylist(
-                    com.example.database.LocalPlaylistEntity(
-                        id = newPlaylist.id,
-                        name = newPlaylist.name,
-                        coverUrl = newPlaylist.coverUrl,
-                        description = newPlaylist.description,
-                        songs = newPlaylist.songs
-                    )
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // Sync asynchronously to Firestore
-        CoroutineScope(Dispatchers.IO).launch {
-            savePlaylistToFirestore(newPlaylist)
-        }
-    }
-
-    fun deletePlaylist(playlistId: String) {
-        customPlaylists.removeIf { it.id == playlistId }
-
-        // Remove from Local SQLite DB via Room
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val localDb = com.example.database.AppDatabaseHelper.database
-                localDb.localPlaylistDao().deletePlaylistById(playlistId)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // Delete from Firestore
-        CoroutineScope(Dispatchers.IO).launch {
-            deletePlaylistFromFirestore(playlistId)
+            likedSongs.add(song.copy(isLiked = true))
         }
     }
 
     fun addSongToPlaylist(playlistId: String, song: Song) {
-        var updatedPlaylist: Playlist? = null
-        customPlaylists.replaceAll { playlist ->
-            if (playlist.id == playlistId) {
-                if (playlist.songs.any { it.id == song.id }) {
-                    playlist
-                } else {
-                    val p = playlist.copy(songs = playlist.songs + song)
-                    updatedPlaylist = p
-                    p
-                }
-            } else {
-                playlist
-            }
-        }
-        updatedPlaylist?.let { p ->
-            // Update in Local SQLite DB via Room
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val localDb = com.example.database.AppDatabaseHelper.database
-                    localDb.localPlaylistDao().insertPlaylist(
-                        com.example.database.LocalPlaylistEntity(
-                            id = p.id,
-                            name = p.name,
-                            coverUrl = p.coverUrl,
-                            description = p.description,
-                            songs = p.songs
-                        )
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            // Sync to Firestore
-            CoroutineScope(Dispatchers.IO).launch {
-                savePlaylistToFirestore(p)
+        val index = customPlaylists.indexOfFirst { it.id == playlistId }
+        if (index != -1) {
+            val pl = customPlaylists[index]
+            if (pl.songs.none { it.id == song.id }) {
+                customPlaylists[index] = pl.copy(songs = pl.songs + song)
             }
         }
     }
 
-    fun removeSongFromPlaylist(playlistId: String, songId: String) {
-        var updatedPlaylist: Playlist? = null
-        customPlaylists.replaceAll { playlist ->
-            if (playlist.id == playlistId) {
-                val p = playlist.copy(songs = playlist.songs.filter { it.id != songId })
-                updatedPlaylist = p
-                p
-            } else {
-                playlist
-            }
-        }
-        updatedPlaylist?.let { p ->
-            // Update in Local SQLite DB via Room
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val localDb = com.example.database.AppDatabaseHelper.database
-                    localDb.localPlaylistDao().insertPlaylist(
-                        com.example.database.LocalPlaylistEntity(
-                            id = p.id,
-                            name = p.name,
-                            coverUrl = p.coverUrl,
-                            description = p.description,
-                            songs = p.songs
-                        )
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            // Sync to Firestore
-            CoroutineScope(Dispatchers.IO).launch {
-                savePlaylistToFirestore(p)
-            }
-        }
-    }
-
-    private suspend fun savePlaylistToFirestore(playlist: Playlist) {
-        val dbRef = db ?: return
-        val userId = auth?.currentUser?.uid ?: if (isDemoLoggedIn) "demo_user" else "anonymous_user"
-        val data = hashMapOf(
-            "id" to playlist.id,
-            "name" to playlist.name,
-            "coverUrl" to playlist.coverUrl,
-            "description" to playlist.description,
-            "userId" to userId,
-            "songs" to playlist.songs.map { song ->
-                hashMapOf(
-                    "id" to song.id,
-                    "title" to song.title,
-                    "artist" to song.artist,
-                    "albumArtUrl" to song.albumArtUrl,
-                    "streamUrl" to song.streamUrl,
-                    "durationMs" to song.durationMs
-                )
-            },
-            "updatedAt" to System.currentTimeMillis()
+    fun createPlaylist(name: String, description: String = "") {
+        val newPl = Playlist(
+            id = "custom_${System.currentTimeMillis()}",
+            name = name,
+            description = description,
+            coverUrl = "https://picsum.photos/seed/$name/400/400",
+            songs = emptyList()
         )
-        try {
-            dbRef.collection("user_playlists").document(playlist.id).set(data).await()
-            syncUserProfileToFirestore()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private suspend fun deletePlaylistFromFirestore(playlistId: String) {
-        val dbRef = db ?: return
-        try {
-            dbRef.collection("user_playlists").document(playlistId).delete().await()
-            syncUserProfileToFirestore()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        customPlaylists.add(newPl)
     }
 }

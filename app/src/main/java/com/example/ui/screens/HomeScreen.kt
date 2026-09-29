@@ -1,14 +1,11 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -28,51 +26,23 @@ import com.example.model.Song
 @Composable
 fun HomeScreen(
     onSongSelected: (Song, List<Song>) -> Unit,
-    onPlaylistSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val repository = remember { MusicRepository() }
-    val recentSongsFromDb by MusicRepository.getRecentlyPlayedSongs().collectAsState(initial = emptyList())
-    var fallbackRecentSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        fallbackRecentSongs = repository.getRecentSongs()
-        playlists = repository.getFeaturedPlaylists()
-    }
-
-    val displayRecentSongs = remember(recentSongsFromDb, fallbackRecentSongs) {
-        if (recentSongsFromDb.isNotEmpty()) {
-            recentSongsFromDb.map { entity ->
-                Song(
-                    id = entity.id,
-                    title = entity.title,
-                    artist = entity.artist,
-                    albumArtUrl = entity.albumArtUrl,
-                    streamUrl = entity.streamUrl,
-                    durationMs = entity.durationMs,
-                    lyrics = entity.lyrics,
-                    lastPlaybackPositionMs = entity.lastPlaybackPositionMs,
-                    isDownloaded = entity.isDownloaded,
-                    localFilePath = entity.localFilePath
-                )
-            }
-        } else {
-            fallbackRecentSongs
-        }
-    }
+    val recentSongs = remember { repository.getRecentSongs() }
+    val featuredPlaylists = remember { repository.getFeaturedPlaylists() }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         item {
             Text(
-                text = "Welcome Back",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 16.dp)
+                text = "Welcome Back 🎵",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -81,21 +51,16 @@ fun HomeScreen(
                 text = "Recently Played",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
-            if (displayRecentSongs.isEmpty()) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            } else {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(displayRecentSongs) { song ->
-                        RecentSongItem(song = song, onClick = { onSongSelected(song, displayRecentSongs) })
-                    }
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(recentSongs) { song ->
+                    RecentSongCard(song = song, onClick = { onSongSelected(song, recentSongs) })
                 }
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
 
         item {
@@ -103,118 +68,88 @@ fun HomeScreen(
                 text = "Featured Playlists",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
-        }
-        
-        if (playlists.isEmpty()) {
-            item {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                featuredPlaylists.forEach { playlist ->
+                    PlaylistRow(playlist = playlist, onClick = {
+                        if (playlist.songs.isNotEmpty()) {
+                            onSongSelected(playlist.songs.first(), playlist.songs)
+                        }
+                    })
+                }
             }
-        } else {
-            items(playlists) { playlist ->
-                PlaylistItem(playlist = playlist, onClick = { onPlaylistSelected(playlist.id) })
-            }
         }
-        
+
         item {
-            Spacer(modifier = Modifier.height(80.dp)) // space for bottom player
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }
 
 @Composable
-fun RecentSongItem(song: Song, onClick: () -> Unit) {
-    val progressFraction = if (song.durationMs > 0L && song.lastPlaybackPositionMs > 0L) {
-        (song.lastPlaybackPositionMs.toFloat() / song.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-
-    Column(
+fun RecentSongCard(song: Song, onClick: () -> Unit) {
+    Card(
         modifier = Modifier
-            .width(120.dp)
+            .width(130.dp)
             .clickable { onClick() }
-            .testTag("recent_song_${song.id}")
+            .testTag("recent_song_${song.id}"),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .clip(RoundedCornerShape(8.dp))
-        ) {
+        Column(modifier = Modifier.padding(8.dp)) {
             AsyncImage(
                 model = song.albumArtUrl,
                 contentDescription = song.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .size(114.dp)
+                    .clip(RoundedCornerShape(8.dp))
             )
-            if (progressFraction > 0f) {
-                LinearProgressIndicator(
-                    progress = { progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .align(Alignment.BottomCenter),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.Black.copy(alpha = 0.5f)
-                )
-            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = song.title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = song.artist,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = song.title,
-            fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
-            maxLines = 1,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = song.artist,
-            fontSize = 12.sp,
-            maxLines = 1,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        )
     }
 }
 
 @Composable
-fun PlaylistItem(playlist: Playlist, onClick: () -> Unit) {
-    Row(
+fun PlaylistRow(playlist: Playlist, onClick: () -> Unit) {
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(8.dp)
-            .testTag("featured_playlist_${playlist.id}"),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp)
     ) {
-        AsyncImage(
-            model = playlist.coverUrl,
-            contentDescription = playlist.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(4.dp))
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = playlist.name,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = playlist.coverUrl,
+                contentDescription = playlist.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(8.dp))
             )
-            Text(
-                text = playlist.description,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1
-            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(playlist.name, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(playlist.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "Play",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(32.dp)
-        )
     }
 }
