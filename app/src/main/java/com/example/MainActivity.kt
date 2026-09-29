@@ -1,6 +1,8 @@
 package com.example
 
+import android.app.Activity
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -19,20 +21,39 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.AppDatabaseHelper
 import com.example.data.MusicRepository
+import com.example.model.Song
 import com.example.network.AudioPlayerManager
+import com.example.ui.components.AdMobBannerAd
+import com.example.ui.components.AdMobInterstitialHelper
 import com.example.ui.components.BottomPlayerBar
+import com.example.ui.components.isAdSupported
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.PlayerScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MusicAppTheme
+import com.google.android.gms.ads.MobileAds
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AppDatabaseHelper.init(applicationContext)
+
+        // Initialize the AdMob backend. Skipped on emulators/containers (no Google
+        // Play services) to avoid policy violations and crashes.
+        if (isAdSupported()) {
+            try {
+                MobileAds.initialize(this)
+                // Preload the first interstitial so it is ready for the next trigger.
+                AdMobInterstitialHelper.loadAd(this)
+            } catch (e: Throwable) {
+                Log.e("MainActivity", "Failed to initialize AdMob SDK: ${e.message}")
+            }
+        } else {
+            Log.d("MainActivity", "Running on emulator/container - skipping AdMob initialization.")
+        }
 
         setContent {
             MusicAppTheme {
@@ -45,10 +66,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainAppContent() {
     val context = LocalContext.current
+    val activity = context as? Activity
     val repository = remember { MusicRepository() }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showFullPlayerScreen by remember { mutableStateOf(false) }
+    // Tracks how many songs have been selected so an interstitial ad can be
+    // shown every third selection, matching the original AdMob flow.
+    var songSelectionCount by remember { mutableIntStateOf(0) }
 
     val currentSong by AudioPlayerManager.currentSong.collectAsState()
     val isPlaying by AudioPlayerManager.isPlaying.collectAsState()
@@ -65,6 +90,21 @@ fun MainAppContent() {
 
     BackHandler(enabled = showFullPlayerScreen) {
         showFullPlayerScreen = false
+    }
+
+    // Play a song, optionally gating playback behind an interstitial ad on every
+    // third selection so ads are actually displayed to the user.
+    val onSongSelected: (Song, List<Song>) -> Unit = { song, queue ->
+        songSelectionCount++
+        val activityRef = activity
+        val shouldShowAd = songSelectionCount % 3 == 0 && activityRef != null
+        if (shouldShowAd && isAdSupported()) {
+            AdMobInterstitialHelper.showAd(activityRef!!) {
+                AudioPlayerManager.playSong(activityRef!!, song, queue)
+            }
+        } else {
+            AudioPlayerManager.playSong(context, song, queue)
+        }
     }
 
     Scaffold(
@@ -90,6 +130,13 @@ fun MainAppContent() {
                     onLikeToggle = {
                         currentSong?.let { repository.toggleLikeSong(it) }
                     }
+                )
+
+                // AdMob banner ad rendered above the bottom navigation.
+                AdMobBannerAd(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
                 )
 
                 // Navigation Bar
@@ -148,19 +195,13 @@ fun MainAppContent() {
         ) {
             when (selectedTab) {
                 0 -> HomeScreen(
-                    onSongSelected = { song, queue ->
-                        AudioPlayerManager.playSong(context, song, queue)
-                    }
+                    onSongSelected = onSongSelected
                 )
                 1 -> SearchScreen(
-                    onSongSelected = { song, queue ->
-                        AudioPlayerManager.playSong(context, song, queue)
-                    }
+                    onSongSelected = onSongSelected
                 )
                 2 -> LibraryScreen(
-                    onSongSelected = { song, queue ->
-                        AudioPlayerManager.playSong(context, song, queue)
-                    }
+                    onSongSelected = onSongSelected
                 )
                 3 -> SettingsScreen()
             }

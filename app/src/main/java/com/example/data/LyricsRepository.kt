@@ -86,7 +86,7 @@ class LyricsRepository {
         }
 
         return LyricsResult(
-            lines = lines,
+            lines = lines.sortedBy { it.timeMs },
             provider = LyricsProvider.LRCLIB,
             isSynced = lines.isNotEmpty()
         )
