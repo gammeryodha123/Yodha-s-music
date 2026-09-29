@@ -57,6 +57,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-ui:1.5.0")
 
+    // Google Mobile Ads (AdMob)
+    implementation("com.google.android.gms:play-services-ads:23.5.0")
+
     // Coil Image Loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
