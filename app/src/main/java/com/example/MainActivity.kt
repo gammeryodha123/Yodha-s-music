@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -20,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.AppDatabaseHelper
+import com.example.data.AuthManager
 import com.example.data.MusicRepository
 import com.example.model.Song
 import com.example.network.AudioPlayerManager
@@ -27,11 +30,7 @@ import com.example.ui.components.AdMobBannerAd
 import com.example.ui.components.AdMobInterstitialHelper
 import com.example.ui.components.BottomPlayerBar
 import com.example.ui.components.isAdSupported
-import com.example.ui.screens.HomeScreen
-import com.example.ui.screens.LibraryScreen
-import com.example.ui.screens.PlayerScreen
-import com.example.ui.screens.SearchScreen
-import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.*
 import com.example.ui.theme.MusicAppTheme
 import com.google.android.gms.ads.MobileAds
 
@@ -40,6 +39,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         AppDatabaseHelper.init(applicationContext)
+        AuthManager.init(applicationContext)
 
         // Initialize the AdMob backend. Skipped on emulators/containers (no Google
         // Play services) to avoid policy violations and crashes.
@@ -57,20 +57,45 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MusicAppTheme {
-                MainAppContent()
+                val currentUser by AuthManager.currentUser.collectAsState()
+
+                AnimatedContent(
+                    targetState = currentUser != null,
+                    label = "auth_screen_transition",
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
+                    }
+                ) { isAuthenticated ->
+                    if (isAuthenticated) {
+                        MainAppContent(
+                            onLogout = {
+                                AuthManager.signOut()
+                            }
+                        )
+                    } else {
+                        LoginScreen(
+                            onSignInSuccess = {
+                                // currentUser state automatically updates and transitions to MainAppContent
+                            }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun MainAppContent() {
+fun MainAppContent(
+    onLogout: () -> Unit = {}
+) {
     val context = LocalContext.current
     val activity = context as? Activity
     val repository = remember { MusicRepository() }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showFullPlayerScreen by remember { mutableStateOf(false) }
+
     // Tracks how many songs have been selected so an interstitial ad can be
     // shown every third selection, matching the original AdMob flow.
     var songSelectionCount by remember { mutableIntStateOf(0) }
@@ -99,8 +124,8 @@ fun MainAppContent() {
         val activityRef = activity
         val shouldShowAd = songSelectionCount % 3 == 0 && activityRef != null
         if (shouldShowAd && isAdSupported()) {
-            AdMobInterstitialHelper.showAd(activityRef!!) {
-                AudioPlayerManager.playSong(activityRef!!, song, queue)
+            AdMobInterstitialHelper.showAd(activityRef) {
+                AudioPlayerManager.playSong(activityRef, song, queue)
             }
         } else {
             AudioPlayerManager.playSong(context, song, queue)
@@ -203,7 +228,9 @@ fun MainAppContent() {
                 2 -> LibraryScreen(
                     onSongSelected = onSongSelected
                 )
-                3 -> SettingsScreen()
+                3 -> SettingsScreen(
+                    onLogout = onLogout
+                )
             }
 
             if (showFullPlayerScreen && currentSong != null) {
