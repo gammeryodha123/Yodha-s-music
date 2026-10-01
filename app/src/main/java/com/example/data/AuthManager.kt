@@ -168,6 +168,7 @@ object AuthManager {
             apply()
         }
         _currentUser.value = user
+        FirestoreManager.saveUserProfile(user)
     }
 
     fun signInWithEmail(email: String, password: String): Result<User> {

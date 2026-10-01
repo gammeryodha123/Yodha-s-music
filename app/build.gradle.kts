@@ -53,6 +53,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Firebase Platform
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+
     // Google Play Services Auth for Real Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.3.0")
 

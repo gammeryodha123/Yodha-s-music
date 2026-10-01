@@ -5,6 +5,7 @@ import com.example.database.RecentSongEntity
 import com.example.model.Playlist
 import com.example.model.Song
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 class MusicRepository {
 
@@ -13,7 +14,8 @@ class MusicRepository {
         val customPlaylists = mutableStateListOf<Playlist>()
 
         fun getRecentlyPlayedSongs(): Flow<List<RecentSongEntity>> {
-            return AppDatabaseHelper.database.recentSongDao().getRecentSongsFlow()
+            val db = AppDatabaseHelper.database
+            return db?.recentSongDao()?.getRecentSongsFlow() ?: flowOf(emptyList())
         }
     }
 
