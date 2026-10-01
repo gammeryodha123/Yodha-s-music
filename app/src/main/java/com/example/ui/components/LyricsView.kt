@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
@@ -47,11 +50,13 @@ fun LyricsView(
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "🎵",
-                    fontSize = 48.sp
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(54.dp)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = "No Synced Lyrics Available",
                     fontSize = 18.sp,
@@ -73,13 +78,11 @@ fun LyricsView(
     }
 
     var userHasScrolledManually by remember { mutableStateOf(false) }
-    var lastScrollTimestamp by remember { mutableLongStateOf(0L) }
 
     // Track user scrolling interaction
     LaunchedEffect(lazyListState.isScrollInProgress) {
         if (lazyListState.isScrollInProgress) {
             userHasScrolledManually = true
-            lastScrollTimestamp = System.currentTimeMillis()
         }
     }
 
@@ -110,28 +113,39 @@ fun LyricsView(
                 .fillMaxSize()
                 .testTag("synced_lyrics_column"),
             contentPadding = PaddingValues(
-                top = 180.dp,
+                top = 160.dp,
                 bottom = 260.dp,
-                start = 20.dp,
-                end = 20.dp
+                start = 16.dp,
+                end = 16.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             itemsIndexed(
                 items = lyrics,
                 key = { index, item -> "${index}_${item.timeMs}" }
             ) { index, line ->
                 val isActive = index == activeIndex
+                val nextLineTimeMs = lyrics.getOrNull(index + 1)?.timeMs ?: (line.timeMs + 12000L)
+
+                // Real-time line playback progress calculation (0.0 to 1.0)
+                val lineProgress = if (isActive && playbackPositionMs >= line.timeMs) {
+                    val duration = (nextLineTimeMs - line.timeMs).coerceAtLeast(1000L)
+                    ((playbackPositionMs - line.timeMs).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                } else if (playbackPositionMs > line.timeMs) {
+                    1.0f
+                } else {
+                    0.0f
+                }
 
                 // Smooth property animations for active line highlighting
                 val animatedFontSize by animateFloatAsState(
                     targetValue = if (isActive) 22f else 16f,
-                    animationSpec = tween(durationMillis = 350)
+                    animationSpec = tween(durationMillis = 300)
                 )
 
                 val animatedAlpha by animateFloatAsState(
                     targetValue = if (isActive) 1.0f else 0.40f,
-                    animationSpec = tween(durationMillis = 350)
+                    animationSpec = tween(durationMillis = 300)
                 )
 
                 val animatedColor by animateColorAsState(
@@ -140,11 +154,11 @@ fun LyricsView(
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
-                    animationSpec = tween(durationMillis = 350)
+                    animationSpec = tween(durationMillis = 300)
                 )
 
                 val animatedScale by animateFloatAsState(
-                    targetValue = if (isActive) 1.04f else 1.0f,
+                    targetValue = if (isActive) 1.03f else 1.0f,
                     animationSpec = spring(stiffness = 300f)
                 )
 
@@ -155,7 +169,7 @@ fun LyricsView(
                             scaleX = animatedScale
                             scaleY = animatedScale
                         }
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = ripple()
@@ -165,19 +179,49 @@ fun LyricsView(
                         }
                         .testTag("lyric_line_$index"),
                     color = if (isActive) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
                     } else {
                         Color.Transparent
                     },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Start
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Timestamp pill
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            ) {
+                                Text(
+                                    text = formatTime(line.timeMs),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            if (isActive) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = "Active Line",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Real-time lyric text
                         Text(
                             text = line.text,
                             fontSize = animatedFontSize.sp,
@@ -185,17 +229,22 @@ fun LyricsView(
                             color = animatedColor,
                             lineHeight = (animatedFontSize + 8).sp,
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .alpha(animatedAlpha)
                         )
 
+                        // Real-time progress bar indicator for active line
                         if (isActive) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = CircleShape,
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { lineProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(CircleShape),
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(8.dp)
-                            ) {}
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         }
                     }
                 }
@@ -241,4 +290,11 @@ fun LyricsView(
             }
         }
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000L
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format("%02d:%02d", minutes, seconds)
 }
