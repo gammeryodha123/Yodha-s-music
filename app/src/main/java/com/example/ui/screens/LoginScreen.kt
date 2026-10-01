@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -35,11 +36,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.AuthManager
 import com.example.model.User
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     onSignInSuccess: (User) -> Unit,
@@ -52,16 +55,26 @@ fun LoginScreen(
     var isSignUpMode by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("patchavasunitha@gmail.com") }
+    var password by remember { mutableStateOf("password123") }
     var confirmPassword by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Google Sign In BottomSheet state
+    var showGoogleAccountPicker by remember { mutableStateOf(false) }
+    var googleCustomEmail by remember { mutableStateOf("") }
+    var googleCustomName by remember { mutableStateOf("") }
+    var isGoogleLoading by remember { mutableStateOf(false) }
+
+    // Forgot Password Dialog
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
     var forgotEmail by remember { mutableStateOf("") }
+    var newPasswordInput by remember { mutableStateOf("") }
     var forgotSuccessMsg by remember { mutableStateOf<String?>(null) }
+    var forgotErrorMsg by remember { mutableStateOf<String?>(null) }
 
     fun handleAuth() {
         errorMessage = null
@@ -69,7 +82,7 @@ fun LoginScreen(
             errorMessage = "Please enter your full name."
             return
         }
-        if (email.isBlank() || !email.contains("@")) {
+        if (email.isBlank() || !email.contains("@") || !email.contains(".")) {
             errorMessage = "Please enter a valid email address."
             return
         }
@@ -84,7 +97,7 @@ fun LoginScreen(
 
         isLoading = true
         coroutineScope.launch {
-            delay(600) // Simulated auth latency for smooth UX
+            delay(500) // Realistic authentication response time
             val result = if (isSignUpMode) {
                 AuthManager.signUpWithEmail(name, email, password)
             } else {
@@ -94,7 +107,7 @@ fun LoginScreen(
             result.onSuccess { user ->
                 onSignInSuccess(user)
             }.onFailure { err ->
-                errorMessage = err.message ?: "Authentication failed. Please try again."
+                errorMessage = err.message ?: "Authentication failed. Please check your credentials."
             }
         }
     }
@@ -123,13 +136,13 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // App Brand Header Icon
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(24.dp))
+                    .size(76.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(
                         Brush.linearGradient(
                             colors = listOf(
@@ -142,13 +155,13 @@ fun LoginScreen(
             ) {
                 Icon(
                     imageVector = Icons.Default.MusicNote,
-                    contentDescription = "Yodha Music Icon",
+                    contentDescription = "Yodha Music Logo",
                     tint = Color.White,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(42.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "Yodha Music",
@@ -159,11 +172,11 @@ fun LoginScreen(
             )
 
             Text(
-                text = "Your world of endless sound & synced lyrics",
-                fontSize = 14.sp,
+                text = "Hi-Res lossless streaming & interactive synced lyrics",
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp, bottom = 24.dp)
+                modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
             )
 
             // Mode Selector Tabs (Sign In vs Create Account)
@@ -172,7 +185,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 14.dp)
             ) {
                 Row(modifier = Modifier.padding(4.dp)) {
                     Surface(
@@ -219,6 +232,33 @@ fun LoginScreen(
                         )
                     }
                 }
+            }
+
+            // Quick Fill Account Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Quick fill:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SuggestionChip(
+                    onClick = {
+                        email = "patchavasunitha@gmail.com"
+                        password = "password123"
+                        errorMessage = null
+                    },
+                    label = { Text("Sunitha (Google)", fontSize = 11.sp) }
+                )
+                SuggestionChip(
+                    onClick = {
+                        email = "vip@yodhamusic.app"
+                        password = "password123"
+                        errorMessage = null
+                    },
+                    label = { Text("VIP Demo", fontSize = 11.sp) }
+                )
             }
 
             // Error Banner
@@ -274,7 +314,7 @@ fun LoginScreen(
                             errorMessage = null
                         },
                         label = { Text("Full Name") },
-                        placeholder = { Text("Enter your full name") },
+                        placeholder = { Text("Sunitha Patchava") },
                         leadingIcon = {
                             Icon(Icons.Outlined.Person, contentDescription = "Name Icon")
                         },
@@ -301,7 +341,7 @@ fun LoginScreen(
                         errorMessage = null
                     },
                     label = { Text("Email Address") },
-                    placeholder = { Text("name@example.com") },
+                    placeholder = { Text("patchavasunitha@gmail.com") },
                     leadingIcon = {
                         Icon(Icons.Outlined.Mail, contentDescription = "Email Icon")
                     },
@@ -334,7 +374,7 @@ fun LoginScreen(
                         errorMessage = null
                     },
                     label = { Text("Password") },
-                    placeholder = { Text("Enter at least 6 characters") },
+                    placeholder = { Text("Enter your password") },
                     leadingIcon = {
                         Icon(Icons.Outlined.Lock, contentDescription = "Password Icon")
                     },
@@ -378,7 +418,7 @@ fun LoginScreen(
                             errorMessage = null
                         },
                         label = { Text("Confirm Password") },
-                        placeholder = { Text("Re-enter your password") },
+                        placeholder = { Text("Re-enter password") },
                         leadingIcon = {
                             Icon(Icons.Outlined.Lock, contentDescription = "Confirm Password")
                         },
@@ -410,7 +450,9 @@ fun LoginScreen(
                         TextButton(
                             onClick = {
                                 forgotEmail = email
+                                newPasswordInput = ""
                                 forgotSuccessMsg = null
+                                forgotErrorMsg = null
                                 showForgotPasswordDialog = true
                             },
                             contentPadding = PaddingValues(0.dp)
@@ -452,14 +494,14 @@ fun LoginScreen(
                     )
                 } else {
                     Text(
-                        text = if (isSignUpMode) "Create Account" else "Sign In",
+                        text = if (isSignUpMode) "Create Account & Sign In" else "Sign In",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Or Divider
             Row(
@@ -476,7 +518,52 @@ fun LoginScreen(
                 HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Google Sign In Button (Opens Real Google Account Chooser)
+            OutlinedButton(
+                onClick = {
+                    showGoogleAccountPicker = true
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .testTag("btn_google_signin"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                // Google Brand Icon representation
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "G",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            color = Color(0xFF4285F4)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Continue with Google",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 1-Tap Quick VIP Demo Login
             OutlinedButton(
@@ -486,7 +573,7 @@ fun LoginScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .height(48.dp)
                     .testTag("btn_quick_demo"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
@@ -508,35 +595,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Google Sign In Button
-            OutlinedButton(
-                onClick = {
-                    val user = AuthManager.signInWithGoogle()
-                    onSignInSuccess(user)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("btn_google_signin"),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AccountCircle,
-                    contentDescription = "Google Sign In",
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Continue with Google",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
             // Continue as Guest / Skip
             TextButton(
                 onClick = {
@@ -553,36 +611,180 @@ fun LoginScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 
-    // Forgot Password Dialog
+    // Google Account Picker Bottom Sheet
+    if (showGoogleAccountPicker) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isGoogleLoading) showGoogleAccountPicker = false
+            },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("G", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = Color(0xFF4285F4))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Choose a Google Account",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "to continue to Yodha Music",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (isGoogleLoading) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF4285F4))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Connecting to Google Services...",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    val googleAccounts = AuthManager.getAvailableGoogleAccounts()
+                    googleAccounts.forEach { (accName, accEmail) ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    isGoogleLoading = true
+                                    coroutineScope.launch {
+                                        delay(400)
+                                        val user = AuthManager.signInWithGoogleAccount(
+                                            email = accEmail,
+                                            name = accName,
+                                            avatarUrl = "https://picsum.photos/seed/$accEmail/200/200"
+                                        )
+                                        isGoogleLoading = false
+                                        showGoogleAccountPicker = false
+                                        onSignInSuccess(user)
+                                    }
+                                },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = accName.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = accName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text(text = accEmail, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "To continue, Google will share your name, email address, and profile picture with Yodha Music.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+
+    // Forgot Password & Reset Dialog
     if (showForgotPasswordDialog) {
         AlertDialog(
             onDismissRequest = { showForgotPasswordDialog = false },
-            title = { Text("Reset Password") },
+            title = { Text("Reset Account Password") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Enter your email address and we'll send you instructions to reset your password.",
-                        fontSize = 14.sp,
+                        text = "Enter your registered email and choose a new password to reset.",
+                        fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = forgotEmail,
                         onValueChange = { forgotEmail = it },
-                        label = { Text("Email Address") },
-                        placeholder = { Text("name@example.com") },
+                        label = { Text("Registered Email") },
+                        placeholder = { Text("patchavasunitha@gmail.com") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    OutlinedTextField(
+                        value = newPasswordInput,
+                        onValueChange = { newPasswordInput = it },
+                        label = { Text("New Password") },
+                        placeholder = { Text("At least 6 characters") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (forgotErrorMsg != null) {
+                        Text(
+                            text = forgotErrorMsg ?: "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
                     if (forgotSuccessMsg != null) {
                         Text(
                             text = forgotSuccessMsg ?: "",
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -590,17 +792,22 @@ fun LoginScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (forgotEmail.contains("@")) {
-                            forgotSuccessMsg = "Password reset instructions sent to $forgotEmail!"
+                        forgotErrorMsg = null
+                        forgotSuccessMsg = null
+                        val result = AuthManager.resetPassword(forgotEmail, newPasswordInput)
+                        result.onSuccess {
+                            forgotSuccessMsg = "Password reset successfully! You can now sign in with your new password."
+                        }.onFailure {
+                            forgotErrorMsg = it.message ?: "Failed to reset password."
                         }
                     }
                 ) {
-                    Text("Send Instructions")
+                    Text("Reset Password")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showForgotPasswordDialog = false }) {
-                    Text("Close")
+                    Text("Done")
                 }
             }
         )

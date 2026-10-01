@@ -7,5 +7,6 @@ data class User(
     val avatarUrl: String = "",
     val isGuest: Boolean = false,
     val plan: String = "VIP Listener",
-    val joinedDate: String = "September 2026"
+    val joinedDate: String = "September 2026",
+    val authProvider: String = "email"
 )
