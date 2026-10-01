@@ -11,7 +11,9 @@ data class Song(
     val isLiked: Boolean = false,
     val isDownloaded: Boolean = false,
     val localFilePath: String? = null,
-    val lastPlaybackPositionMs: Long = 0L
+    val lastPlaybackPositionMs: Long = 0L,
+    val genre: String = "Electronic",
+    val album: String = "Single"
 )
 
 data class Playlist(

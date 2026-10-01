@@ -12,7 +12,7 @@
          android:supportsRtl="true"
          android:theme="@style/Theme.MusicApp">
 
-        <!-- AdMob -->
+        <!-- AdMob Configuration -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-1565038231841255~1652617655"/>
@@ -21,6 +21,17 @@
             android:value="false" />
         <meta-data
             android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
+
+        <!-- Firebase Analytics / FA Deactivation Flags -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_deactivated"
+            android:value="true" />
+        <meta-data
+            android:name="google_analytics_automatic_screen_reporting_enabled"
             android:value="false" />
 
         <activity

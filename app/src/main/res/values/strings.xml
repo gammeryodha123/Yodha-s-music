@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Yodha Music</string>
+    <!-- Placeholder google_app_id to prevent Firebase Analytics missing app ID logs -->
+    <string name="google_app_id" translatable="false">1:1234567890:android:abcdef1234567890</string>
 </resources>

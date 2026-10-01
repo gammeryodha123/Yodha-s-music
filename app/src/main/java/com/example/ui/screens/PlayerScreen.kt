@@ -1,35 +1,36 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lyrics
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.LyricsRepository
 import com.example.model.Song
+import com.example.network.AudioPlayerManager
+import com.example.network.AudioPreset
+import com.example.network.RepeatMode
 import com.example.ui.components.LyricsView
 
 @Composable
@@ -46,19 +47,41 @@ fun PlayerScreen(
     onLikeToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val durationMs = if (song.durationMs > 0) song.durationMs else 180000L
-    var activePlayerTab by remember { mutableIntStateOf(0) } // 0: Player Controls, 1: Synced Lyrics
+    var activePlayerTab by remember { mutableIntStateOf(0) } // 0: Song, 1: Lyrics, 2: Queue
 
     val lyricsRepository = remember { LyricsRepository() }
     val syncedLyrics = remember(song.id) {
         lyricsRepository.getSyncedLyricsForSong(song).lines
     }
 
+    val repeatMode by AudioPlayerManager.repeatMode.collectAsState()
+    val isShuffle by AudioPlayerManager.isShuffleEnabled.collectAsState()
+    val playbackSpeed by AudioPlayerManager.playbackSpeed.collectAsState()
+    val currentPreset by AudioPlayerManager.audioPreset.collectAsState()
+    val sleepTimerMinutes by AudioPlayerManager.sleepTimerMinutesRemaining.collectAsState()
+    val currentQueue by AudioPlayerManager.playlist.collectAsState()
+
+    var showPresetDialog by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showSpeedDialog by remember { mutableStateOf(false) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(24.dp)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.background
+                    )
+                )
+            )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
             .testTag("full_player_screen")
     ) {
         Column(
@@ -68,9 +91,7 @@ fun PlayerScreen(
         ) {
             // Top Bar Header
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -82,29 +103,28 @@ fun PlayerScreen(
                     )
                 }
 
-                // Segmented View Switcher (Controls vs Synced Lyrics)
+                // 3-Way Segmented View Switcher (Song / Lyrics / Queue)
                 SingleChoiceSegmentedButtonRow {
                     SegmentedButton(
                         selected = activePlayerTab == 0,
                         onClick = { activePlayerTab = 0 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Song", fontSize = 12.sp)
-                        }
+                        Text("Song", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     SegmentedButton(
                         selected = activePlayerTab == 1,
                         onClick = { activePlayerTab = 1 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Lyrics, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Lyrics", fontSize = 12.sp)
-                        }
+                        Text("Lyrics", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    SegmentedButton(
+                        selected = activePlayerTab == 2,
+                        onClick = { activePlayerTab = 2 },
+                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                    ) {
+                        Text("Queue", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -117,51 +137,224 @@ fun PlayerScreen(
                 }
             }
 
-            // Main View Area: Artwork vs Synced Lyrics Display
+            // Main View Area: Artwork vs Synced Lyrics vs Queue
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (activePlayerTab == 0) {
-                    // Artwork Hero Mode
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        AsyncImage(
-                            model = song.albumArtUrl,
-                            contentDescription = song.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(280.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = song.title,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = song.artist,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                when (activePlayerTab) {
+                    0 -> {
+                        // Artwork Hero Mode
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Card(
+                                shape = RoundedCornerShape(24.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                                modifier = Modifier.size(260.dp)
+                            ) {
+                                AsyncImage(
+                                    model = song.albumArtUrl,
+                                    contentDescription = song.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Text(
+                                text = song.title,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = song.artist,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Tags & Quick Preset Chips
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                ) {
+                                    Text(
+                                        text = song.genre,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                                    modifier = Modifier.clickable { showPresetDialog = true }
+                                ) {
+                                    Text(
+                                        text = "EQ: ${currentPreset.displayName.take(12)}...",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    1 -> {
+                        // Synced Animated Lyrics Mode
+                        LyricsView(
+                            lyrics = syncedLyrics,
+                            playbackPositionMs = playbackPositionMs,
+                            onSeekTo = onPositionChange,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                } else {
-                    // Synced Animated Lyrics Mode
-                    LyricsView(
-                        lyrics = syncedLyrics,
-                        playbackPositionMs = playbackPositionMs,
-                        onSeekTo = onPositionChange,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    2 -> {
+                        // Queue & Up Next Mode
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                text = "Up Next (${currentQueue.size} tracks)",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(currentQueue) { index, queueSong ->
+                                    val isCurrent = queueSong.id == song.id
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isCurrent) {
+                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                            }
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                AudioPlayerManager.playSong(context, queueSong, currentQueue)
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            AsyncImage(
+                                                model = queueSong.albumArtUrl,
+                                                contentDescription = queueSong.title,
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = queueSong.title,
+                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                                    fontSize = 14.sp,
+                                                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = queueSong.artist,
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            if (isCurrent) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Equalizer,
+                                                    contentDescription = "Playing",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            } else {
+                                                IconButton(onClick = { AudioPlayerManager.removeFromQueue(index) }) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Remove",
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+
+            // Quick FX & Tools Row (Speed, EQ, Sleep Timer)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Playback Speed
+                AssistChip(
+                    onClick = { showSpeedDialog = true },
+                    label = { Text("${playbackSpeed}x") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                )
+
+                // Sound Preset / Equalizer
+                AssistChip(
+                    onClick = { showPresetDialog = true },
+                    label = { Text("EQ") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                )
+
+                // Sleep Timer
+                AssistChip(
+                    onClick = { showSleepTimerDialog = true },
+                    label = {
+                        Text(if (sleepTimerMinutes != null) "${sleepTimerMinutes}m left" else "Sleep")
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Bedtime, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    colors = if (sleepTimerMinutes != null) {
+                        AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                        AssistChipDefaults.assistChipColors()
+                    }
+                )
             }
 
             // Bottom Player Slider & Playback Controls
@@ -180,35 +373,187 @@ fun PlayerScreen(
                     Text(formatTime(durationMs), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
+                // Playback Controls Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Shuffle Toggle
+                    IconButton(onClick = { AudioPlayerManager.toggleShuffle() }) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Shuffle",
+                            tint = if (isShuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Previous Track
                     IconButton(onClick = onSkipPrevious, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
                     }
+
+                    // Play/Pause Main FAB Button
                     IconButton(
                         onClick = onPlayPauseToggle,
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(68.dp)
                             .background(MaterialTheme.colorScheme.primary, CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(38.dp)
                         )
                     }
+
+                    // Next Track
                     IconButton(onClick = onSkipNext, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+                    }
+
+                    // Repeat Mode Toggle (Off -> All -> One)
+                    IconButton(onClick = { AudioPlayerManager.toggleRepeatMode() }) {
+                        Icon(
+                            imageVector = when (repeatMode) {
+                                RepeatMode.ONE -> Icons.Default.RepeatOne
+                                RepeatMode.ALL -> Icons.Default.Repeat
+                                RepeatMode.OFF -> Icons.Default.Repeat
+                            },
+                            contentDescription = "Repeat Mode: ${repeatMode.displayName}",
+                            tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
         }
+    }
+
+    // Sound FX / Preset Dialog
+    if (showPresetDialog) {
+        AlertDialog(
+            onDismissRequest = { showPresetDialog = false },
+            title = { Text("Sound Equalizer Preset") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AudioPreset.entries.forEach { preset ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    AudioPlayerManager.setAudioPreset(preset)
+                                    showPresetDialog = false
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentPreset == preset,
+                                onClick = {
+                                    AudioPlayerManager.setAudioPreset(preset)
+                                    showPresetDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(preset.displayName, fontWeight = if (currentPreset == preset) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPresetDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Sleep Timer Dialog
+    if (showSleepTimerDialog) {
+        AlertDialog(
+            onDismissRequest = { showSleepTimerDialog = false },
+            title = { Text("Set Sleep Timer") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(15, 30, 45, 60).forEach { mins ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    AudioPlayerManager.setSleepTimer(mins)
+                                    showSleepTimerDialog = false
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("$mins Minutes", fontSize = 15.sp)
+                        }
+                    }
+
+                    if (sleepTimerMinutes != null) {
+                        TextButton(
+                            onClick = {
+                                AudioPlayerManager.setSleepTimer(null)
+                                showSleepTimerDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Turn Off Sleep Timer", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSleepTimerDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Playback Speed Dialog
+    if (showSpeedDialog) {
+        AlertDialog(
+            onDismissRequest = { showSpeedDialog = false },
+            title = { Text("Playback Speed") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    AudioPlayerManager.setPlaybackSpeed(speed)
+                                    showSpeedDialog = false
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = playbackSpeed == speed,
+                                onClick = {
+                                    AudioPlayerManager.setPlaybackSpeed(speed)
+                                    showSpeedDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("${speed}x ${if (speed == 1.0f) "(Normal)" else ""}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSpeedDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 }
 
