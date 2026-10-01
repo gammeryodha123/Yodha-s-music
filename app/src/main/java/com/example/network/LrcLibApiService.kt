@@ -7,11 +7,12 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 // -----------------------------------------------------
-// 1. LrcLib API Models & Retrofit Interface
+// 1. LrcLib API Models & Retrofit Interface (lrclib.net)
 // -----------------------------------------------------
 @JsonClass(generateAdapter = true)
 data class LrcLibResponse(
@@ -40,83 +41,52 @@ interface LrcLibApiService {
 }
 
 // -----------------------------------------------------
-// 2. NetEase Cloud Music Lyrics API Models & Interface
+// 2. Lyrics.ovh API Models & Retrofit Interface (api.lyrics.ovh)
 // -----------------------------------------------------
 @JsonClass(generateAdapter = true)
-data class NetEaseLyricItem(
-    val lyric: String? = null
+data class LyricsOvhResponse(
+    val lyrics: String? = null
 )
 
-@JsonClass(generateAdapter = true)
-data class NetEaseLyricResponse(
-    val lrc: NetEaseLyricItem? = null,
-    val tlyric: NetEaseLyricItem? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class NetEaseSongItem(
-    val id: Long,
-    val name: String? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class NetEaseSearchResult(
-    val songs: List<NetEaseSongItem>? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class NetEaseSearchResponse(
-    val result: NetEaseSearchResult? = null
-)
-
-interface NetEaseApiService {
-    @GET("api/search/get/web")
-    suspend fun searchSong(
-        @Query("s") query: String,
-        @Query("type") type: Int = 1,
-        @Query("limit") limit: Int = 5
-    ): NetEaseSearchResponse
-
-    @GET("api/song/lyric")
-    suspend fun getLyric(
-        @Query("id") songId: Long,
-        @Query("lv") lv: Int = -1,
-        @Query("kv") kv: Int = -1,
-        @Query("tv") tv: Int = -1
-    ): NetEaseLyricResponse
+interface LyricsOvhApiService {
+    @GET("v1/{artist}/{title}")
+    suspend fun getLyrics(
+        @Path("artist") artist: String,
+        @Path("title") title: String
+    ): LyricsOvhResponse
 }
 
 // -----------------------------------------------------
-// 3. Multi-Source Lyrics Client Factory
+// 3. Open Source Lyrics Client Factory
 // -----------------------------------------------------
 object LrcLibClient {
-    private const val BASE_URL = "https://lrclib.net/"
-    private const val NETEASE_BASE_URL = "https://music.163.com/"
+    private const val LRCLIB_BASE_URL = "https://lrclib.net/"
+    private const val LYRICS_OVH_BASE_URL = "https://api.lyrics.ovh/"
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
     val api: LrcLibApiService by lazy {
         Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(LRCLIB_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(LrcLibApiService::class.java)
     }
 
-    val netEaseApi: NetEaseApiService by lazy {
+    val lyricsOvhApi: LyricsOvhApiService by lazy {
         Retrofit.Builder()
-            .baseUrl(NETEASE_BASE_URL)
+            .baseUrl(LYRICS_OVH_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
-            .create(NetEaseApiService::class.java)
+            .create(LyricsOvhApiService::class.java)
     }
 }

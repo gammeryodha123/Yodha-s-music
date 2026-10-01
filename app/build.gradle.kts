@@ -53,6 +53,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Google Play Services Auth for Real Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
+
     // Media3 ExoPlayer
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-ui:1.5.0")

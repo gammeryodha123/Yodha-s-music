@@ -86,7 +86,7 @@ object AuthManager {
             registeredAccounts[it.user.email.lowercase()] = it
         }
 
-        // Load any custom accounts registered by the user from SharedPreferences
+        // Load custom accounts registered by user from SharedPreferences
         val jsonStr = prefs?.getString(KEY_REGISTERED_USERS, null)
         if (!jsonStr.isNullOrBlank()) {
             try {
@@ -108,7 +108,7 @@ object AuthManager {
                     registeredAccounts[email] = RegisteredAccount(user, pass)
                 }
             } catch (e: Throwable) {
-                // Ignore parsing issues and fallback to in-memory map
+                // Ignore parsing errors
             }
         }
     }
@@ -181,11 +181,27 @@ object AuthManager {
 
         val account = registeredAccounts[cleanEmail]
         if (account == null) {
-            return Result.failure(IllegalArgumentException("No account found for $cleanEmail. Please select 'Create Account' tab to register."))
+            // Seamlessly create and authenticate account on first sign in
+            val autoName = cleanEmail.substringBefore("@").replace(".", " ")
+                .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            val newUser = User(
+                id = "user_${System.currentTimeMillis()}",
+                name = autoName,
+                email = cleanEmail,
+                avatarUrl = "https://picsum.photos/seed/$cleanEmail/200/200",
+                isGuest = false,
+                plan = "VIP Listener",
+                authProvider = "email"
+            )
+            registeredAccounts[cleanEmail] = RegisteredAccount(newUser, password)
+            persistRegisteredAccounts()
+            saveUserSession(newUser)
+            return Result.success(newUser)
         }
 
+        // Account exists - verify password
         if (account.passwordHash != password && password != "password123" && password != "admin123") {
-            return Result.failure(IllegalArgumentException("Incorrect password. Please try again or use 'Forgot Password?'"))
+            return Result.failure(IllegalArgumentException("Incorrect password for $cleanEmail. Please try again or use 'Forgot Password?'"))
         }
 
         saveUserSession(account.user)
@@ -206,17 +222,13 @@ object AuthManager {
             return Result.failure(IllegalArgumentException("Password must be at least 6 characters"))
         }
 
-        if (registeredAccounts.containsKey(cleanEmail)) {
-            return Result.failure(IllegalArgumentException("An account with this email already exists. Please switch to Sign In."))
-        }
-
         val user = User(
             id = "user_${System.currentTimeMillis()}",
             name = cleanName,
             email = cleanEmail,
             avatarUrl = "https://picsum.photos/seed/$cleanEmail/200/200",
             isGuest = false,
-            plan = "VIP Listener",
+            plan = "VIP Premium",
             authProvider = "email"
         )
 
@@ -235,7 +247,11 @@ object AuthManager {
         val existing = registeredAccounts[cleanEmail]
 
         val user = if (existing != null) {
-            existing.user.copy(authProvider = "google")
+            existing.user.copy(
+                name = name.ifBlank { existing.user.name },
+                avatarUrl = avatarUrl.ifBlank { existing.user.avatarUrl },
+                authProvider = "google"
+            )
         } else {
             val newUser = User(
                 id = "google_${System.currentTimeMillis()}",

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -36,8 +40,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.data.AuthManager
+import com.example.data.GoogleAuthHelper
 import com.example.model.User
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,6 +52,7 @@ fun LoginScreen(
     onSignInSuccess: (User) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
@@ -55,19 +60,36 @@ fun LoginScreen(
     var isSignUpMode by remember { mutableStateOf(false) }
 
     var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("patchavasunitha@gmail.com") }
-    var password by remember { mutableStateOf("password123") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Google Sign In BottomSheet state
+    // Google Sign In Picker state
     var showGoogleAccountPicker by remember { mutableStateOf(false) }
-    var googleCustomEmail by remember { mutableStateOf("") }
-    var googleCustomName by remember { mutableStateOf("") }
     var isGoogleLoading by remember { mutableStateOf(false) }
+
+    // Google SDK Intent Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isLoading = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            val parseResult = GoogleAuthHelper.parseSignInResult(result.data)
+            parseResult.onSuccess { user ->
+                onSignInSuccess(user)
+            }.onFailure {
+                // Fallback to Google Account Chooser bottom sheet
+                showGoogleAccountPicker = true
+            }
+        } else {
+            // If user cancelled or Google Play Services prompt closed, provide in-app chooser
+            showGoogleAccountPicker = true
+        }
+    }
 
     // Forgot Password Dialog
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
@@ -97,7 +119,7 @@ fun LoginScreen(
 
         isLoading = true
         coroutineScope.launch {
-            delay(500) // Realistic authentication response time
+            delay(400) // Smooth response feedback
             val result = if (isSignUpMode) {
                 AuthManager.signUpWithEmail(name, email, password)
             } else {
@@ -185,7 +207,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 14.dp)
+                    .padding(bottom = 16.dp)
             ) {
                 Row(modifier = Modifier.padding(4.dp)) {
                     Surface(
@@ -232,33 +254,6 @@ fun LoginScreen(
                         )
                     }
                 }
-            }
-
-            // Quick Fill Account Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Quick fill:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SuggestionChip(
-                    onClick = {
-                        email = "patchavasunitha@gmail.com"
-                        password = "password123"
-                        errorMessage = null
-                    },
-                    label = { Text("Sunitha (Google)", fontSize = 11.sp) }
-                )
-                SuggestionChip(
-                    onClick = {
-                        email = "vip@yodhamusic.app"
-                        password = "password123"
-                        errorMessage = null
-                    },
-                    label = { Text("VIP Demo", fontSize = 11.sp) }
-                )
             }
 
             // Error Banner
@@ -341,7 +336,7 @@ fun LoginScreen(
                         errorMessage = null
                     },
                     label = { Text("Email Address") },
-                    placeholder = { Text("patchavasunitha@gmail.com") },
+                    placeholder = { Text("name@example.com") },
                     leadingIcon = {
                         Icon(Icons.Outlined.Mail, contentDescription = "Email Icon")
                     },
@@ -520,10 +515,16 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Google Sign In Button (Opens Real Google Account Chooser)
+            // Google Sign In Button (Launches Real Google SDK Intent or interactive chooser)
             OutlinedButton(
                 onClick = {
-                    showGoogleAccountPicker = true
+                    try {
+                        val signInIntent = GoogleAuthHelper.getSignInIntent(context)
+                        googleSignInLauncher.launch(signInIntent)
+                    } catch (e: Throwable) {
+                        // Fallback directly to Google Account Chooser
+                        showGoogleAccountPicker = true
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -563,37 +564,7 @@ fun LoginScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 1-Tap Quick VIP Demo Login
-            OutlinedButton(
-                onClick = {
-                    val user = AuthManager.signInDemoUser()
-                    onSignInSuccess(user)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("btn_quick_demo"),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FlashOn,
-                    contentDescription = "Demo Login",
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Quick VIP Demo (1-Tap)",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Continue as Guest / Skip
             TextButton(
@@ -649,7 +620,7 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "to continue to Yodha Music",
+                    text = "to sign in to Yodha Music",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -666,7 +637,7 @@ fun LoginScreen(
                         CircularProgressIndicator(color = Color(0xFF4285F4))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Connecting to Google Services...",
+                            text = "Authenticating with Google Account...",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -681,7 +652,7 @@ fun LoginScreen(
                                 .clickable {
                                     isGoogleLoading = true
                                     coroutineScope.launch {
-                                        delay(400)
+                                        delay(300)
                                         val user = AuthManager.signInWithGoogleAccount(
                                             email = accEmail,
                                             name = accName,
@@ -756,7 +727,7 @@ fun LoginScreen(
                         value = forgotEmail,
                         onValueChange = { forgotEmail = it },
                         label = { Text("Registered Email") },
-                        placeholder = { Text("patchavasunitha@gmail.com") },
+                        placeholder = { Text("name@example.com") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

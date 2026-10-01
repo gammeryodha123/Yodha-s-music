@@ -52,9 +52,14 @@ fun PlayerScreen(
     var activePlayerTab by remember { mutableIntStateOf(0) } // 0: Song, 1: Lyrics, 2: Queue
 
     val lyricsRepository = remember { LyricsRepository() }
-    val syncedLyrics = remember(song.id) {
-        lyricsRepository.getSyncedLyricsForSong(song).lines
+    val syncedLyricsResult by produceState(
+        initialValue = lyricsRepository.getSyncedLyricsForSong(song),
+        key1 = song.id
+    ) {
+        val onlineResult = lyricsRepository.fetchLyricsOnline(song)
+        value = onlineResult
     }
+    val syncedLyrics = syncedLyricsResult.lines
 
     val repeatMode by AudioPlayerManager.repeatMode.collectAsState()
     val isShuffle by AudioPlayerManager.isShuffleEnabled.collectAsState()
@@ -225,12 +230,34 @@ fun PlayerScreen(
                     }
                     1 -> {
                         // Synced Animated Lyrics Mode
-                        LyricsView(
-                            lyrics = syncedLyrics,
-                            playbackPositionMs = playbackPositionMs,
-                            onSeekTo = onPositionChange,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                ) {
+                                    Text(
+                                        text = "Source: ${syncedLyricsResult.provider.displayName}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            LyricsView(
+                                lyrics = syncedLyrics,
+                                playbackPositionMs = playbackPositionMs,
+                                onSeekTo = onPositionChange,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                     2 -> {
                         // Queue & Up Next Mode

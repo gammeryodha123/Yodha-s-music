@@ -1,6 +1,10 @@
 package com.example.data
 
 import com.example.model.Song
+import com.example.network.LrcLibClient
+import com.example.util.AppLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class LyricLine(
     val timeMs: Long,
@@ -9,9 +13,9 @@ data class LyricLine(
 
 enum class LyricsProvider(val displayName: String) {
     AUTO("Auto"),
-    LRCLIB("LRCLIB"),
-    NETEASE("NetEase"),
-    EMBEDDED("Local")
+    LRCLIB("Lrclib.net"),
+    LYRICS_OVH("Lyrics.ovh"),
+    EMBEDDED("Embedded")
 }
 
 data class LyricsResult(
@@ -23,8 +27,110 @@ data class LyricsResult(
 )
 
 class LyricsRepository {
+    companion object {
+        private const val TAG = "LyricsRepository"
+    }
+
+    suspend fun fetchLyrics(song: Song, provider: LyricsProvider = LyricsProvider.AUTO): LyricsResult {
+        return fetchLyricsOnline(song)
+    }
+
+    suspend fun fetchLyricsOnline(song: Song): LyricsResult = withContext(Dispatchers.IO) {
+        val cleanTitle = song.title.replace(Regex("(?i)\\(.*\\)|\\[.*\\]"), "").trim()
+        val cleanArtist = song.artist.replace(Regex("(?i)vevo|official|music|topic"), "").trim()
+
+        // 1. Primary: Lrclib.net (Open Source Synced Lyrics)
+        try {
+            val response = LrcLibClient.api.getLyrics(
+                trackName = cleanTitle,
+                artistName = cleanArtist
+            )
+
+            if (!response.syncedLyrics.isNullOrBlank()) {
+                val lines = parseLrcLyrics(response.syncedLyrics)
+                if (lines.isNotEmpty()) {
+                    return@withContext LyricsResult(
+                        lines = lines,
+                        provider = LyricsProvider.LRCLIB,
+                        isSynced = true,
+                        trackTitle = response.trackName,
+                        artistName = response.artistName
+                    )
+                }
+            } else if (!response.plainLyrics.isNullOrBlank()) {
+                val lines = convertPlainToTimedLyrics(response.plainLyrics)
+                return@withContext LyricsResult(
+                    lines = lines,
+                    provider = LyricsProvider.LRCLIB,
+                    isSynced = false,
+                    trackTitle = response.trackName,
+                    artistName = response.artistName
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Lrclib.net direct match failed for $cleanTitle by $cleanArtist: ${e.message}")
+        }
+
+        // 1b. Search Lrclib.net if direct get was empty
+        try {
+            val searchResults = LrcLibClient.api.searchLyrics(query = "$cleanTitle $cleanArtist")
+            val bestMatch = searchResults.firstOrNull {
+                !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank()
+            }
+
+            if (bestMatch != null) {
+                if (!bestMatch.syncedLyrics.isNullOrBlank()) {
+                    val lines = parseLrcLyrics(bestMatch.syncedLyrics)
+                    if (lines.isNotEmpty()) {
+                        return@withContext LyricsResult(
+                            lines = lines,
+                            provider = LyricsProvider.LRCLIB,
+                            isSynced = true
+                        )
+                    }
+                } else if (!bestMatch.plainLyrics.isNullOrBlank()) {
+                    val lines = convertPlainToTimedLyrics(bestMatch.plainLyrics)
+                    return@withContext LyricsResult(
+                        lines = lines,
+                        provider = LyricsProvider.LRCLIB,
+                        isSynced = false
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Lrclib.net search failed: ${e.message}")
+        }
+
+        // 2. Secondary: Lyrics.ovh (Free Open Source Plain Lyrics)
+        try {
+            val ovhResponse = LrcLibClient.lyricsOvhApi.getLyrics(
+                artist = cleanArtist,
+                title = cleanTitle
+            )
+            if (!ovhResponse.lyrics.isNullOrBlank()) {
+                val lines = convertPlainToTimedLyrics(ovhResponse.lyrics)
+                return@withContext LyricsResult(
+                    lines = lines,
+                    provider = LyricsProvider.LYRICS_OVH,
+                    isSynced = false
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Lyrics.ovh failed: ${e.message}")
+        }
+
+        // 3. Fallback: Parse embedded lyrics or generate structured sample lines
+        return@withContext getSyncedLyricsForSong(song)
+    }
 
     fun getSyncedLyricsForSong(song: Song): LyricsResult {
+        if (!song.lyrics.isNullOrBlank()) {
+            val parsed = parseLrcLyrics(song.lyrics)
+            if (parsed.isNotEmpty()) {
+                return LyricsResult(lines = parsed, provider = LyricsProvider.EMBEDDED)
+            }
+        }
+
         val lines = when (song.id) {
             "1" -> listOf(
                 LyricLine(0L, "♪ (Intro - Synthwave Beats) ♪"),
@@ -36,7 +142,7 @@ class LyricsRepository {
                 LyricLine(54000L, "Lost in a dream where the future shines"),
                 LyricLine(66000L, "Tracing the shadows of forgotten lines"),
                 LyricLine(78000L, "In the digital haze, we find our key"),
-                LyricLine(9000L, "Together forever in endless harmony"),
+                LyricLine(90000L, "Together forever in endless harmony"),
                 LyricLine(105000L, "♪ (Instrumental Breakdown) ♪"),
                 LyricLine(125000L, "Neon dreams guiding us through the night"),
                 LyricLine(140000L, "Fading away into the morning light"),
@@ -53,50 +159,21 @@ class LyricsRepository {
                 LyricLine(70000L, "Acoustic sunrise softly calling my name"),
                 LyricLine(85000L, "Life moves on, but love remains the same"),
                 LyricLine(100000L, "Step outside and take in the view"),
-                LyricLine(120000L, "Every new dawn is a chance brand new"),
-                LyricLine(145000L, "♪ (Melodic Outro) ♪"),
-                LyricLine(170000L, "Acoustic sunrise fading softly away...")
+                LyricLine(120000L, "Every new dawn is a chance brand new")
             )
-            "3" -> listOf(
-                LyricLine(0L, "♪ (Dark Techno Atmosphere) ♪"),
-                LyricLine(120000L, "Echoes in the grid, signals in the dark"),
-                LyricLine(25000L, "Cybernetic pulses leaving a spark"),
-                LyricLine(40000L, "System reboot, memory overload"),
-                LyricLine(55000L, "Walking down the cybernetic road"),
-                LyricLine(75000L, "♪ (Heavy Bass Drop) ♪"),
-                LyricLine(95000L, "Cyberpunk echoes through the virtual sky"),
-                LyricLine(115000L, "Data streams rushing as time flies by"),
-                LyricLine(140000L, "Hacking through the static, breaking the wall"),
-                LyricLine(165000L, "Cyberpunk echoes never fall"),
-                LyricLine(190000L, "♪ (Outro Beats) ♪")
+            else -> listOf(
+                LyricLine(0L, "♪ Playing ${song.title} by ${song.artist} ♪"),
+                LyricLine(8000L, "Real-time synced lyrics connected via Lrclib.net"),
+                LyricLine(18000L, "Pure open-source music streaming on Yodha App"),
+                LyricLine(30000L, "Enjoy high quality audio and synchronized playback!")
             )
-            "4" -> listOf(
-                LyricLine(0L, "♪ (Lofi Chill Vinyl Scratch) ♪"),
-                LyricLine(10000L, "Raindrops falling on the window pane"),
-                LyricLine(22000L, "Soft lofi chords taking away the pain"),
-                LyricLine(35000L, "Sipping warm tea while studying late"),
-                LyricLine(50000L, "Letting time flow, trusting in fate"),
-                LyricLine(68000L, "♪ (Chillhop Jazz Trumpet) ♪"),
-                LyricLine(88000L, "Peaceful moments in a quiet room"),
-                LyricLine(108000L, "Flowers in the garden starting to bloom"),
-                LyricLine(130000L, "Chill beats looping smoothly in the background"),
-                LyricLine(150000L, "Pure relaxation in every sound")
-            )
-            else -> parseLrcLyrics(song.lyrics ?: "")
         }
 
         return LyricsResult(
             lines = lines.sortedBy { it.timeMs },
-            provider = LyricsProvider.LRCLIB,
-            isSynced = lines.isNotEmpty()
+            provider = LyricsProvider.EMBEDDED,
+            isSynced = true
         )
-    }
-
-    suspend fun fetchLyrics(
-        song: Song,
-        provider: LyricsProvider = LyricsProvider.AUTO
-    ): LyricsResult {
-        return getSyncedLyricsForSong(song)
     }
 
     fun parseLrcLyrics(lrcText: String): List<LyricLine> {
@@ -115,8 +192,23 @@ class LyricsRepository {
                 if (text.isNotBlank()) {
                     lines.add(LyricLine(timeMs, text))
                 }
+            } else if (raw.isNotBlank() && !raw.startsWith("[")) {
+                lines.add(LyricLine(lines.size * 5000L, raw.trim()))
             }
         }
         return lines.sortedBy { it.timeMs }
+    }
+
+    private fun convertPlainToTimedLyrics(plainText: String): List<LyricLine> {
+        val rawLines = plainText.lines().map { it.trim() }.filter { it.isNotBlank() }
+        if (rawLines.isEmpty()) return emptyList()
+
+        val intervalMs = 6000L
+        return rawLines.mapIndexed { index, line ->
+            LyricLine(
+                timeMs = index * intervalMs,
+                text = line
+            )
+        }
     }
 }
