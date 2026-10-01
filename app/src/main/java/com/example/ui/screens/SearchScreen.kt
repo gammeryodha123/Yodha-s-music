@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
@@ -25,27 +26,39 @@ import coil.compose.AsyncImage
 import com.example.data.MusicRepository
 import com.example.model.Song
 import com.example.network.AudioPlayerManager
+import com.example.network.MusicSourcesManager
+import com.example.network.SearchSource
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun SearchScreen(
     onSongSelected: (Song, List<Song>) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedGenre by remember { mutableStateOf("All") }
+    val coroutineScope = rememberCoroutineScope()
+    var searchQuery by remember { mutableStateOf("Kesariya") }
+    var selectedSource by remember { mutableStateOf(SearchSource.ALL) }
+
     val repository = remember { MusicRepository() }
-    val allSongs = remember { repository.getSampleSongs() }
+    val defaultSongs = remember { repository.getSampleSongs() }
 
-    val genres = listOf("All", "Synthwave", "Acoustic", "Cyberpunk", "Lofi", "Electronic", "Ambient", "Jazz")
+    var searchResults by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
 
-    val filteredSongs = remember(searchQuery, selectedGenre) {
-        allSongs.filter { song ->
-            val matchesGenre = selectedGenre == "All" || song.genre.equals(selectedGenre, ignoreCase = true)
-            val matchesQuery = searchQuery.isBlank() ||
-                    song.title.contains(searchQuery, ignoreCase = true) ||
-                    song.artist.contains(searchQuery, ignoreCase = true) ||
-                    song.album.contains(searchQuery, ignoreCase = true)
-            matchesGenre && matchesQuery
+    // Live search trigger whenever searchQuery or selectedSource changes
+    LaunchedEffect(searchQuery, selectedSource) {
+        if (searchQuery.isBlank()) {
+            searchResults = defaultSongs
+            isSearching = false
+        } else {
+            isSearching = true
+            delay(300) // Debounce rapid typing
+            val liveResults = MusicSourcesManager.searchAllSources(searchQuery, selectedSource)
+            searchResults = if (liveResults.isNotEmpty()) liveResults else defaultSongs.filter {
+                it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true)
+            }
+            isSearching = false
         }
     }
 
@@ -55,7 +68,7 @@ fun SearchScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "Discover & Search",
+            text = "Discover & Open Streaming",
             fontSize = 26.sp,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -66,8 +79,18 @@ fun SearchScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search songs, artists, albums...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+            placeholder = { Text("Search songs, artists on JioSaavn & Piped...") },
+            leadingIcon = {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+            },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { searchQuery = "" }) {
@@ -84,16 +107,37 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Genre Filter Chips
+        // Open Source Filter Chips
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            items(genres) { genre ->
+            item {
                 FilterChip(
-                    selected = selectedGenre == genre,
-                    onClick = { selectedGenre = genre },
-                    label = { Text(genre) }
+                    selected = selectedSource == SearchSource.ALL,
+                    onClick = { selectedSource = SearchSource.ALL },
+                    label = { Text("All Sources 🌐") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedSource == SearchSource.JIOSAAVN,
+                    onClick = { selectedSource = SearchSource.JIOSAAVN },
+                    label = { Text("JioSaavn 320kbps 🎧") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedSource == SearchSource.PIPED,
+                    onClick = { selectedSource = SearchSource.PIPED },
+                    label = { Text("Piped YouTube ▶️") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedSource == SearchSource.ITUNES,
+                    onClick = { selectedSource = SearchSource.ITUNES },
+                    label = { Text("iTunes Music 🍎") }
                 )
             }
         }
@@ -101,7 +145,7 @@ fun SearchScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = if (searchQuery.isBlank() && selectedGenre == "All") "Browse All Tracks (${filteredSongs.size})" else "Results (${filteredSongs.size})",
+            text = if (isSearching) "Searching open streams..." else "Results (${searchResults.size} tracks)",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -109,7 +153,7 @@ fun SearchScreen(
         )
 
         // Results List
-        if (filteredSongs.isEmpty()) {
+        if (searchResults.isEmpty() && !isSearching) {
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -136,11 +180,11 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                items(filteredSongs) { song ->
+                items(searchResults) { song ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSongSelected(song, filteredSongs) },
+                            .clickable { onSongSelected(song, searchResults) },
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
@@ -159,13 +203,21 @@ fun SearchScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(song.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                 Text("${song.artist} • ${song.album}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                val sourceLabel = when {
+                                    song.id.startsWith("saavn_") -> "JioSaavn 320kbps"
+                                    song.id.startsWith("piped_") -> "Piped YouTube"
+                                    song.id.startsWith("itunes_") -> "iTunes Stream"
+                                    else -> "Open Stream"
+                                }
+
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
                                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                                     modifier = Modifier.padding(top = 4.dp)
                                 ) {
                                     Text(
-                                        text = song.genre,
+                                        text = sourceLabel,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
