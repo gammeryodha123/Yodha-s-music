@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
@@ -22,48 +23,26 @@ import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
 /**
- * Whether ad loading / display is supported in the current environment.
- *
- * AdMob is disabled on emulators and inside Compose previews to avoid policy
- * violations, crashes on devices without Google Play services, and preview errors.
+ * Whether ad loading / display is enabled. Always enabled for test ads.
  */
 fun isAdSupported(): Boolean {
-    if (isEmulator()) return false
     return true
-}
-
-private fun isEmulator(): Boolean {
-    return (android.os.Build.FINGERPRINT.startsWith("generic")
-            || android.os.Build.FINGERPRINT.startsWith("unknown")
-            || android.os.Build.MODEL.contains("google_sdk")
-            || android.os.Build.MODEL.contains("Emulator")
-            || android.os.Build.MODEL.contains("Android SDK built for x86")
-            || android.os.Build.MANUFACTURER.contains("Genymotion")
-            || (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic"))
-            || "google_sdk" == android.os.Build.PRODUCT
-            || android.os.Build.HARDWARE.contains("goldfish")
-            || android.os.Build.HARDWARE.contains("ranchu"))
 }
 
 private const val TAG = "AdMobAd"
 
 /**
- * Production AdMob banner ad unit id (matches the application id in the manifest).
+ * Official AdMob Test Banner Unit ID (Guaranteed to load test ads across all devices & emulators).
  */
-private const val BANNER_AD_UNIT_ID = "ca-app-pub-1565038231841255/7148486913"
+private const val BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/6300978111"
 
 /**
- * Test interstitial ad unit id. Replace with a production interstitial ad unit id
- * for release builds.
+ * Official AdMob Test Interstitial Unit ID.
  */
 private const val INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
 /**
- * Composable banner ad rendered via the official AdView through [AndroidView].
- *
- * The ad is only rendered when [isAdSupported] returns true and the composable is
- * not being previewed. When ads are not supported an empty, correctly-sized spacer
- * is emitted so the layout does not shift.
+ * Composable banner ad rendered via official AdView through [AndroidView].
  */
 @Composable
 fun AdMobBannerAd(
@@ -71,9 +50,8 @@ fun AdMobBannerAd(
     adUnitId: String = BANNER_AD_UNIT_ID
 ) {
     val inspectionMode = LocalInspectionMode.current
-    if (!isAdSupported() || inspectionMode) {
-        // Reserve the banner height so the bottom bar layout stays stable.
-        androidx.compose.foundation.layout.Spacer(
+    if (inspectionMode) {
+        Spacer(
             modifier = modifier
                 .fillMaxWidth()
                 .height(50.dp)
@@ -96,72 +74,68 @@ fun AdMobBannerAd(
                         Log.w(TAG, "Banner ad failed to load: ${p0.message}")
                     }
                 }
-                loadAd(AdRequest.Builder().build())
+                try {
+                    loadAd(AdRequest.Builder().build())
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Banner load exception: ${e.message}")
+                }
             }
         },
-        update = { adView ->
-            // Banner loading is handled once during creation; nothing to update.
+        update = {
+            // Banner loading is handled during creation
         }
     )
 }
 
 /**
  * Backend helper responsible for loading and showing AdMob interstitial ads.
- *
- * A single interstitial is preloaded and reused. After the ad is dismissed the next
- * one is preloaded automatically so it is ready for the following trigger. When no ad
- * is available the supplied [onAdClosed] callback is still invoked so playback always
- * continues.
  */
 object AdMobInterstitialHelper {
     private var mInterstitialAd: InterstitialAd? = null
     private var isAdLoading = false
 
     /**
-     * Preload an interstitial ad. Safe to call repeatedly: it is a no-op while an ad
-     * is already loaded or loading.
+     * Preload an interstitial ad.
      */
     fun loadAd(context: Context, adUnitId: String = INTERSTITIAL_AD_UNIT_ID) {
         if (mInterstitialAd != null || isAdLoading) return
         isAdLoading = true
 
         val adRequest = AdRequest.Builder().build()
-        InterstitialAd.load(
-            context,
-            adUnitId,
-            adRequest,
-            object : InterstitialAdLoadCallback() {
-                override fun onAdFailedToLoad(adError: LoadAdError) {
-                    mInterstitialAd = null
-                    isAdLoading = false
-                    Log.w(TAG, "Interstitial ad failed to load: ${adError.message}")
-                }
+        try {
+            InterstitialAd.load(
+                context,
+                adUnitId,
+                adRequest,
+                object : InterstitialAdLoadCallback() {
+                    override fun onAdFailedToLoad(adError: LoadAdError) {
+                        mInterstitialAd = null
+                        isAdLoading = false
+                        Log.w(TAG, "Interstitial ad failed to load: ${adError.message}")
+                    }
 
-                override fun onAdLoaded(interstitialAd: InterstitialAd) {
-                    mInterstitialAd = interstitialAd
-                    isAdLoading = false
+                    override fun onAdLoaded(interstitialAd: InterstitialAd) {
+                        mInterstitialAd = interstitialAd
+                        isAdLoading = false
+                    }
                 }
-            }
-        )
+            )
+        } catch (e: Throwable) {
+            isAdLoading = false
+            Log.w(TAG, "Interstitial load exception: ${e.message}")
+        }
     }
 
     /**
-     * Show the preloaded interstitial, invoking [onAdClosed] when the user dismisses
-     * it (or immediately if no ad is ready). Always continues with [onAdClosed].
+     * Show the preloaded interstitial, invoking [onAdClosed] when dismissed.
      */
     fun showAd(activity: Activity, onAdClosed: () -> Unit) {
-        if (!isAdSupported()) {
-            onAdClosed()
-            return
-        }
-
         val ad = mInterstitialAd
         if (ad != null) {
             ad.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
                     mInterstitialAd = null
                     onAdClosed()
-                    // Preload the next ad automatically so it is ready next time.
                     loadAd(activity)
                 }
 
@@ -171,9 +145,13 @@ object AdMobInterstitialHelper {
                     onAdClosed()
                 }
             }
-            ad.show(activity)
+            try {
+                ad.show(activity)
+            } catch (e: Throwable) {
+                mInterstitialAd = null
+                onAdClosed()
+            }
         } else {
-            // No ad cached yet: continue playback and try to preload for next time.
             onAdClosed()
             loadAd(activity)
         }

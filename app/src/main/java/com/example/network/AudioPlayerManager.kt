@@ -2,20 +2,24 @@ package com.example.network
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import com.example.data.LyricLine
-import com.example.data.LyricsRepository
+import com.example.data.AppDatabaseHelper
+import com.example.data.AuthManager
+import com.example.data.FirestoreManager
 import com.example.data.OfflineDownloadManager
+import com.example.database.RecentSongEntity
 import com.example.model.Song
+import com.example.util.AppLogger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 enum class RepeatMode(val displayName: String) {
     OFF("Off"),
@@ -23,21 +27,20 @@ enum class RepeatMode(val displayName: String) {
     ONE("Repeat One")
 }
 
-enum class AudioPreset(val displayName: String, val bassMultiplier: Float, val trebleMultiplier: Float) {
-    BALANCED("Balanced / Flat", 1.0f, 1.0f),
-    BASS_BOOST("Bass Boost 🎧", 1.4f, 0.9f),
-    VOCAL_CLARITY("Vocal Clarity 🎙️", 0.8f, 1.3f),
-    SPATIAL_3D("Spatial 3D Audio 🌌", 1.2f, 1.2f),
-    ELECTRONIC("Electronic Club ⚡", 1.3f, 1.2f),
-    ACOUSTIC("Acoustic Warmth ☕", 1.1f, 1.1f)
+enum class AudioPreset(val displayName: String, val bassMultiplier: Float = 1.0f) {
+    BALANCED("Standard Balanced", 1.0f),
+    BASS_BOOST("Bass Boost (+6dB)", 1.4f),
+    VOCAL_CLEAR("Vocal Clarity", 0.9f),
+    TREBLE_BOOST("Treble Sparkle", 0.8f),
+    HI_RES_LOSSLESS("Hi-Res Lossless Master", 1.2f)
 }
 
 object AudioPlayerManager {
     private const val TAG = "AudioPlayerManager"
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val lyricsRepository = LyricsRepository()
 
     private var exoPlayer: ExoPlayer? = null
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var progressJob: Job? = null
 
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong.asStateFlow()
@@ -54,10 +57,7 @@ object AudioPlayerManager {
     private val _playlist = MutableStateFlow<List<Song>>(emptyList())
     val playlist: StateFlow<List<Song>> = _playlist.asStateFlow()
 
-    private val _currentLyrics = MutableStateFlow<List<LyricLine>>(emptyList())
-    val currentLyrics: StateFlow<List<LyricLine>> = _currentLyrics.asStateFlow()
-
-    private val _repeatMode = MutableStateFlow(RepeatMode.ALL)
+    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
     val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
 
     private val _isShuffleEnabled = MutableStateFlow(false)
@@ -72,30 +72,40 @@ object AudioPlayerManager {
     private val _sleepTimerMinutesRemaining = MutableStateFlow<Int?>(null)
     val sleepTimerMinutesRemaining: StateFlow<Int?> = _sleepTimerMinutesRemaining.asStateFlow()
 
-    private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
 
-    private fun getOrCreatePlayer(context: Context): ExoPlayer {
-        return exoPlayer ?: ExoPlayer.Builder(context.applicationContext).build().also { player ->
-            exoPlayer = player
-            player.playbackParameters = PlaybackParameters(_playbackSpeed.value)
-            player.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    _isPlaying.value = playing
-                    if (playing) {
-                        startProgressTracker()
-                    } else {
-                        stopProgressTracker()
-                    }
-                }
+    fun getOrCreatePlayer(context: Context): ExoPlayer {
+        if (exoPlayer == null) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .build()
 
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) {
-                        handleSongCompletion(context)
-                    }
+            exoPlayer = ExoPlayer.Builder(context.applicationContext)
+                .setAudioAttributes(audioAttributes, true)
+                .setHandleAudioBecomingNoisy(true)
+                .build().apply {
+                    addListener(object : Player.Listener {
+                        override fun onIsPlayingChanged(isPlaying: Boolean) {
+                            _isPlaying.value = isPlaying
+                            if (isPlaying) {
+                                startProgressTracking()
+                            } else {
+                                stopProgressTracking()
+                            }
+                        }
+
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            if (playbackState == Player.STATE_READY) {
+                                _durationMs.value = duration.coerceAtLeast(0L)
+                            } else if (playbackState == Player.STATE_ENDED) {
+                                handleSongCompletion(context)
+                            }
+                        }
+                    })
                 }
-            })
         }
+        return exoPlayer!!
     }
 
     private fun handleSongCompletion(context: Context) {
@@ -129,11 +139,40 @@ object AudioPlayerManager {
             _playlist.value = listOf(song)
         }
 
+        // Firebase & Room Backend Logging
         scope.launch(Dispatchers.IO) {
-            val localFile = OfflineDownloadManager.getLocalAudioFile(context, song.id)
+            val currentUser = AuthManager.currentUser.value
+            if (currentUser != null) {
+                FirestoreManager.recordRecentlyPlayed(currentUser.id, song)
+            }
+
+            try {
+                val db = AppDatabaseHelper.database
+                db?.recentSongDao()?.insertRecentSong(
+                    RecentSongEntity(
+                        id = song.id,
+                        title = song.title,
+                        artist = song.artist,
+                        albumArtUrl = song.albumArtUrl,
+                        streamUrl = song.streamUrl,
+                        durationMs = song.durationMs,
+                        lyrics = song.lyrics,
+                        playedAt = System.currentTimeMillis(),
+                        lastPlaybackPositionMs = 0L,
+                        isDownloaded = song.isDownloaded,
+                        localFilePath = song.localFilePath
+                    )
+                )
+            } catch (e: Throwable) {
+                AppLogger.w(TAG, "Room recent insert error: ${e.message}")
+            }
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val localFile: File? = OfflineDownloadManager.getLocalAudioFile(context, song.id)
             val isOffline = localFile != null && localFile.exists()
 
-            val mediaUri: Uri = if (isOffline) {
+            val mediaUri: Uri = if (isOffline && localFile != null) {
                 Uri.fromFile(localFile)
             } else {
                 val directUrl = song.streamUrl.ifBlank {
@@ -179,54 +218,64 @@ object AudioPlayerManager {
         exoPlayer?.let { player ->
             if (player.isPlaying) {
                 player.pause()
+                _isPlaying.value = false
             } else {
                 player.play()
+                _isPlaying.value = true
             }
         }
     }
 
     fun playNext(context: Context) {
-        val current = _currentSong.value ?: return
         val list = _playlist.value
         if (list.isEmpty()) return
+        val current = _currentSong.value
+        val currentIndex = list.indexOfFirst { it.id == current?.id }
 
-        if (_isShuffleEnabled.value && list.size > 1) {
-            val randomNext = list.filter { it.id != current.id }.randomOrNull() ?: list.first()
-            playSong(context, randomNext)
-            return
+        val nextIndex = if (_isShuffleEnabled.value) {
+            (list.indices).random()
+        } else {
+            (currentIndex + 1) % list.size
         }
 
-        val currentIndex = list.indexOfFirst { it.id == current.id }
-        val nextIndex = (currentIndex + 1) % list.size
-        playSong(context, list[nextIndex])
+        playSong(context, list[nextIndex], list)
     }
 
     fun playPrevious(context: Context) {
-        val current = _currentSong.value ?: return
         val list = _playlist.value
         if (list.isEmpty()) return
+        val current = _currentSong.value
+        val currentIndex = list.indexOfFirst { it.id == current?.id }
 
-        // If played more than 3 seconds, seek back to beginning of current track
-        if (_playbackPositionMs.value > 3000L) {
-            seekTo(0L)
-            return
-        }
-
-        val currentIndex = list.indexOfFirst { it.id == current.id }
-        val prevIndex = if (currentIndex - 1 < 0) list.size - 1 else currentIndex - 1
-        playSong(context, list[prevIndex])
+        val prevIndex = if (currentIndex <= 0) list.size - 1 else currentIndex - 1
+        playSong(context, list[prevIndex], list)
     }
 
     fun seekTo(positionMs: Long) {
         exoPlayer?.seekTo(positionMs)
         _playbackPositionMs.value = positionMs
+
+        val activeSong = _currentSong.value
+        if (activeSong != null) {
+            OfflineDownloadManager.savePlaybackProgress(activeSong.id, positionMs)
+        }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        _playbackSpeed.value = speed
+        exoPlayer?.setPlaybackSpeed(speed)
+    }
+
+    fun setAudioPreset(preset: AudioPreset) {
+        _audioPreset.value = preset
+        AppLogger.i(TAG, "Applied audio preset: ${preset.displayName}")
     }
 
     fun toggleRepeatMode() {
         _repeatMode.value = when (_repeatMode.value) {
+            RepeatMode.OFF -> RepeatMode.ALL
             RepeatMode.ALL -> RepeatMode.ONE
             RepeatMode.ONE -> RepeatMode.OFF
-            RepeatMode.OFF -> RepeatMode.ALL
         }
     }
 
@@ -234,20 +283,32 @@ object AudioPlayerManager {
         _isShuffleEnabled.value = !_isShuffleEnabled.value
     }
 
-    fun setPlaybackSpeed(speed: Float) {
-        _playbackSpeed.value = speed
-        exoPlayer?.playbackParameters = PlaybackParameters(speed)
-    }
+    fun setSleepTimer(minutes: Int?) {
+        sleepTimerJob?.cancel()
+        if (minutes == null || minutes <= 0) {
+            _sleepTimerMinutesRemaining.value = null
+            return
+        }
 
-    fun setAudioPreset(preset: AudioPreset) {
-        _audioPreset.value = preset
+        _sleepTimerMinutesRemaining.value = minutes
+        sleepTimerJob = scope.launch(Dispatchers.IO) {
+            var remaining = minutes
+            while (remaining > 0) {
+                delay(60000L)
+                remaining--
+                _sleepTimerMinutesRemaining.value = remaining
+            }
+            withContext(Dispatchers.Main) {
+                exoPlayer?.pause()
+                _isPlaying.value = false
+                _sleepTimerMinutesRemaining.value = null
+            }
+        }
     }
 
     fun addToQueue(song: Song) {
-        val currentList = _playlist.value.toMutableList()
-        if (currentList.none { it.id == song.id }) {
-            currentList.add(song)
-            _playlist.value = currentList
+        if (_playlist.value.none { it.id == song.id }) {
+            _playlist.value = _playlist.value + song
         }
     }
 
@@ -259,56 +320,35 @@ object AudioPlayerManager {
         }
     }
 
-    fun setSleepTimer(minutes: Int?) {
-        sleepTimerJob?.cancel()
-        _sleepTimerMinutesRemaining.value = minutes
-        if (minutes != null && minutes > 0) {
-            sleepTimerJob = scope.launch {
-                var remaining = minutes
-                while (remaining > 0) {
-                    delay(60000L)
-                    remaining--
-                    _sleepTimerMinutesRemaining.value = remaining
-                }
-                // Time's up - pause playback smoothly
-                exoPlayer?.pause()
-                _sleepTimerMinutesRemaining.value = null
-            }
-        }
-    }
-
-    private fun startProgressTracker() {
-        progressJob?.cancel()
+    private fun startProgressTracking() {
+        stopProgressTracking()
         progressJob = scope.launch {
-            var loop = 0
             while (isActive) {
                 exoPlayer?.let { player ->
                     if (player.isPlaying) {
-                        val currentPos = player.currentPosition.coerceAtLeast(0L)
-                        _playbackPositionMs.value = currentPos
-                        if (player.duration > 0) {
-                            _durationMs.value = player.duration
-                        }
-                        loop++
-                        if (loop % 6 == 0) {
-                            val active = _currentSong.value
-                            if (active != null) {
-                                OfflineDownloadManager.savePlaybackProgress(
-                                    songId = active.id,
-                                    positionMs = currentPos,
-                                    durationMs = player.duration.coerceAtLeast(0L)
-                                )
-                            }
+                        val pos = player.currentPosition
+                        _playbackPositionMs.value = pos
+
+                        val activeSong = _currentSong.value
+                        if (activeSong != null && pos > 0) {
+                            OfflineDownloadManager.savePlaybackProgress(activeSong.id, pos)
                         }
                     }
                 }
-                delay(500L)
+                delay(500)
             }
         }
     }
 
-    private fun stopProgressTracker() {
+    private fun stopProgressTracking() {
         progressJob?.cancel()
         progressJob = null
+    }
+
+    fun release() {
+        stopProgressTracking()
+        sleepTimerJob?.cancel()
+        exoPlayer?.release()
+        exoPlayer = null
     }
 }

@@ -36,7 +36,7 @@ object OfflineDownloadManager {
         file?.delete()
     }
 
-    fun savePlaybackProgress(songId: String, positionMs: Long, durationMs: Long) {}
+    fun savePlaybackProgress(songId: String, positionMs: Long, durationMs: Long = 0L) {}
 
     fun cacheRecentlyPlayedSong(song: Song, positionMs: Long = 0L) {}
 

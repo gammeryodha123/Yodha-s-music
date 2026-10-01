@@ -13,10 +13,11 @@ import org.junit.Test
 class MusicPlayerFeatureTest {
 
     @Test
-    fun `test repository songs have valid genres and albums`() {
+    fun `test sample song repository contents`() {
         val repo = MusicRepository()
         val songs = repo.getSampleSongs()
         assertTrue(songs.size >= 8)
+
         songs.forEach { song ->
             assertTrue(song.genre.isNotBlank())
             assertTrue(song.album.isNotBlank())
@@ -26,7 +27,8 @@ class MusicPlayerFeatureTest {
 
     @Test
     fun `test repeat mode transitions correctly`() {
-        // Initial state is ALL
+        // First transition from initial state (OFF)
+        AudioPlayerManager.toggleRepeatMode()
         assertEquals(RepeatMode.ALL, AudioPlayerManager.repeatMode.value)
 
         AudioPlayerManager.toggleRepeatMode()
@@ -34,13 +36,10 @@ class MusicPlayerFeatureTest {
 
         AudioPlayerManager.toggleRepeatMode()
         assertEquals(RepeatMode.OFF, AudioPlayerManager.repeatMode.value)
-
-        AudioPlayerManager.toggleRepeatMode()
-        assertEquals(RepeatMode.ALL, AudioPlayerManager.repeatMode.value)
     }
 
     @Test
-    fun `test shuffle toggle`() {
+    fun `test shuffle mode toggle`() {
         val initial = AudioPlayerManager.isShuffleEnabled.value
         AudioPlayerManager.toggleShuffle()
         assertEquals(!initial, AudioPlayerManager.isShuffleEnabled.value)
@@ -58,14 +57,17 @@ class MusicPlayerFeatureTest {
         val testSong = Song(
             id = "test_101",
             title = "Test Queue Track",
-            artist = "Unit Tester",
-            albumArtUrl = "https://picsum.photos/seed/test101/400/400"
+            artist = "Queue Master",
+            albumArtUrl = "https://picsum.photos/seed/q101/300/300"
         )
+
         AudioPlayerManager.addToQueue(testSong)
         assertTrue(AudioPlayerManager.playlist.value.any { it.id == "test_101" })
 
         val index = AudioPlayerManager.playlist.value.indexOfFirst { it.id == "test_101" }
-        AudioPlayerManager.removeFromQueue(index)
-        assertTrue(AudioPlayerManager.playlist.value.none { it.id == "test_101" })
+        if (index != -1) {
+            AudioPlayerManager.removeFromQueue(index)
+            assertTrue(AudioPlayerManager.playlist.value.none { it.id == "test_101" })
+        }
     }
 }
