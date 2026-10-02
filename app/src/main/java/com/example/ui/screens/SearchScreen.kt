@@ -132,6 +132,20 @@ fun SearchScreen(
             }
             item {
                 FilterChip(
+                    selected = selectedSource == SearchSource.JAMENDO,
+                    onClick = { selectedSource = SearchSource.JAMENDO },
+                    label = { Text("Jamendo Open 🎸") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedSource == SearchSource.AUDIUS,
+                    onClick = { selectedSource = SearchSource.AUDIUS },
+                    label = { Text("Audius Web3 ⚡") }
+                )
+            }
+            item {
+                FilterChip(
                     selected = selectedSource == SearchSource.ITUNES,
                     onClick = { selectedSource = SearchSource.ITUNES },
                     label = { Text("iTunes & Deezer 🍎") }

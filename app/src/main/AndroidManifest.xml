@@ -17,6 +17,9 @@
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713"/>
+        <meta-data
+            android:name="com.google.android.gms.ads.FLAG_CONTENT_AD_SERVICES_DISABLED"
+            android:value="true" />
         <property
             android:name="android.adservices.PROPERTY_EXTENSION_AD_SERVICES_ENABLED"
             android:value="false" />
@@ -41,6 +44,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:hardwareAccelerated="true"
             android:theme="@style/Theme.MusicApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

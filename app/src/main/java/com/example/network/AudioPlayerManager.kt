@@ -175,7 +175,14 @@ object AudioPlayerManager {
             val mediaUri: Uri = if (isOffline && localFile != null) {
                 Uri.fromFile(localFile)
             } else {
-                val directUrl = song.streamUrl.ifBlank {
+                var rawStreamUrl = song.streamUrl
+                if (song.id.startsWith("piped_") || rawStreamUrl.contains("watch?v=") || rawStreamUrl.contains("piped")) {
+                    val resolvedStream = MusicSourcesManager.getPipedStreamUrl(song.id)
+                    if (!resolvedStream.isNullOrBlank()) {
+                        rawStreamUrl = resolvedStream
+                    }
+                }
+                val directUrl = rawStreamUrl.ifBlank {
                     "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
                 }
                 Uri.parse(directUrl)

@@ -86,7 +86,7 @@ interface ITunesApiService {
 }
 
 // -----------------------------------------------------
-// 3. JioSaavn API Models & Service (saavn.dev)
+// 3. JioSaavn API Models & Service (saavn.dev & saavn.me)
 // -----------------------------------------------------
 @JsonClass(generateAdapter = true)
 data class JioSaavnDownloadUrl(
@@ -107,6 +107,18 @@ data class JioSaavnAlbum(
 )
 
 @JsonClass(generateAdapter = true)
+data class JioSaavnArtistItem(
+    val id: String? = null,
+    val name: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class JioSaavnArtistsGroup(
+    val primary: List<JioSaavnArtistItem>? = null,
+    val all: List<JioSaavnArtistItem>? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class JioSaavnSongItem(
     val id: String? = null,
     val name: String? = null,
@@ -114,7 +126,9 @@ data class JioSaavnSongItem(
     val year: String? = null,
     val duration: Long? = null,
     val image: List<JioSaavnImage>? = null,
-    val downloadUrl: List<JioSaavnDownloadUrl>? = null
+    val downloadUrl: List<JioSaavnDownloadUrl>? = null,
+    val artists: JioSaavnArtistsGroup? = null,
+    val primaryArtists: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -138,7 +152,7 @@ interface JioSaavnApiService {
 }
 
 // -----------------------------------------------------
-// 4. Piped API Models & Service (pipedapi.kavin.rocks)
+// 4. Piped / Invidious API (YouTube Music backend)
 // -----------------------------------------------------
 @JsonClass(generateAdapter = true)
 data class PipedSearchResult(
@@ -177,7 +191,66 @@ interface PipedApiService {
 }
 
 // -----------------------------------------------------
-// 5. Unified Open Source Music Sources Manager
+// 5. Jamendo API (Free Open Source Music Catalog)
+// -----------------------------------------------------
+@JsonClass(generateAdapter = true)
+data class JamendoTrack(
+    val id: String? = null,
+    val name: String? = null,
+    val duration: Long? = null,
+    val artist_name: String? = null,
+    val album_name: String? = null,
+    val image: String? = null,
+    val audio: String? = null,
+    val audiodownload: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class JamendoResponse(
+    val results: List<JamendoTrack>? = null
+)
+
+interface JamendoApiService {
+    @GET("v1.0/tracks/")
+    suspend fun searchTracks(
+        @Query("client_id") clientId: String = "56d30c95",
+        @Query("format") format: String = "json",
+        @Query("limit") limit: Int = 25,
+        @Query("search") search: String
+    ): JamendoResponse
+}
+
+// -----------------------------------------------------
+// 6. Audius API (Decentralized Open Source Music)
+// -----------------------------------------------------
+@JsonClass(generateAdapter = true)
+data class AudiusUser(
+    val name: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AudiusTrack(
+    val id: String? = null,
+    val title: String? = null,
+    val duration: Long? = null,
+    val user: AudiusUser? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AudiusResponse(
+    val data: List<AudiusTrack>? = null
+)
+
+interface AudiusApiService {
+    @GET("v1/tracks/search")
+    suspend fun searchTracks(
+        @Query("query") query: String,
+        @Query("app_name") appName: String = "YodhaMusicApp"
+    ): AudiusResponse
+}
+
+// -----------------------------------------------------
+// 7. Unified Open Source Music Sources Manager
 // -----------------------------------------------------
 object MusicSourcesManager {
     private const val TAG = "MusicSourcesManager"
@@ -192,6 +265,13 @@ object MusicSourcesManager {
     private var pipedServerIndex = 0
     var activePipedServer: String = "https://pipedapi.kavin.rocks/"
 
+    private val JIOSAAVN_SERVERS = listOf(
+        "https://saavn.dev/",
+        "https://saavn.me/"
+    )
+    private var jioSaavnServerIndex = 0
+    var activeJioSaavnServer: String = "https://saavn.dev/"
+
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
@@ -205,6 +285,8 @@ object MusicSourcesManager {
     private var iTunesApi: ITunesApiService? = null
     private var jioSaavnApi: JioSaavnApiService? = null
     private var pipedApi: PipedApiService? = null
+    private var jamendoApi: JamendoApiService? = null
+    private var audiusApi: AudiusApiService? = null
 
     init {
         rebuildRetrofitServices()
@@ -230,7 +312,7 @@ object MusicSourcesManager {
 
             // JioSaavn API
             val jioSaavnRetrofit = Retrofit.Builder()
-                .baseUrl("https://saavn.dev/")
+                .baseUrl(activeJioSaavnServer)
                 .client(okHttpClient)
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
@@ -243,6 +325,22 @@ object MusicSourcesManager {
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
             pipedApi = pipedRetrofit.create(PipedApiService::class.java)
+
+            // Jamendo API
+            val jamendoRetrofit = Retrofit.Builder()
+                .baseUrl("https://api.jamendo.com/")
+                .client(okHttpClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build()
+            jamendoApi = jamendoRetrofit.create(JamendoApiService::class.java)
+
+            // Audius API
+            val audiusRetrofit = Retrofit.Builder()
+                .baseUrl("https://discoveryprovider.audius.co/")
+                .client(okHttpClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build()
+            audiusApi = audiusRetrofit.create(AudiusApiService::class.java)
         } catch (e: Throwable) {
             AppLogger.e(TAG, "Failed building Retrofit clients: ${e.message}")
         }
@@ -253,28 +351,40 @@ object MusicSourcesManager {
 
         val results = mutableListOf<Song>()
 
-        // 1. Deezer Search (Global tracks, full metadata & covers)
-        if (source == SearchSource.ALL || source == SearchSource.ITUNES) {
-            val deezerResults = searchDeezer(query)
-            results.addAll(deezerResults)
-        }
-
-        // 2. iTunes Search (Global catalog & preview streams)
-        if (source == SearchSource.ALL || source == SearchSource.ITUNES) {
-            val iTunesResults = searchITunes(query)
-            results.addAll(iTunesResults)
-        }
-
-        // 3. JioSaavn Search (saavn.dev - Bollywood, Indian & Global tracks)
+        // 1. JioSaavn Search (saavn.dev - Full 320kbps songs)
         if (source == SearchSource.ALL || source == SearchSource.JIOSAAVN) {
             val saavnResults = searchJioSaavn(query)
             results.addAll(saavnResults)
         }
 
-        // 4. Piped API (YouTube Music search)
+        // 2. Jamendo Open Source Music Catalog (Full length MP3s)
+        if (source == SearchSource.ALL || source == SearchSource.JAMENDO) {
+            val jamendoResults = searchJamendo(query)
+            results.addAll(jamendoResults)
+        }
+
+        // 3. Deezer Search (Global tracks, preview & metadata)
+        if (source == SearchSource.ALL || source == SearchSource.ITUNES) {
+            val deezerResults = searchDeezer(query)
+            results.addAll(deezerResults)
+        }
+
+        // 4. iTunes Search (Global catalog & previews)
+        if (source == SearchSource.ALL || source == SearchSource.ITUNES) {
+            val iTunesResults = searchITunes(query)
+            results.addAll(iTunesResults)
+        }
+
+        // 5. Piped API (YouTube Music search)
         if (source == SearchSource.ALL || source == SearchSource.PIPED) {
             val pipedResults = searchPiped(query)
             results.addAll(pipedResults)
+        }
+
+        // 6. Audius Decentralized Music Search
+        if (source == SearchSource.ALL || source == SearchSource.AUDIUS) {
+            val audiusResults = searchAudius(query)
+            results.addAll(audiusResults)
         }
 
         // De-duplicate results by title + artist
@@ -289,6 +399,83 @@ object MusicSourcesManager {
         }
 
         return@withContext getFallbackResults(query, source)
+    }
+
+    // JioSaavn Search Implementation
+    private suspend fun searchJioSaavn(query: String): List<Song> {
+        var attempts = 0
+        while (attempts < JIOSAAVN_SERVERS.size) {
+            try {
+                val response = jioSaavnApi?.searchSongs(query)
+                val items = response?.data?.results ?: emptyList()
+
+                val mapped = items.mapNotNull { item ->
+                    val songId = item.id ?: return@mapNotNull null
+                    val title = item.name ?: "Unknown Song"
+                    val album = item.album?.name ?: "Single"
+
+                    val artistName = item.artists?.primary?.firstOrNull()?.name
+                        ?: item.primaryArtists
+                        ?: "JioSaavn Artist"
+
+                    val artworkUrl = item.image?.lastOrNull()?.url
+                        ?: item.image?.firstOrNull()?.url
+                        ?: "https://picsum.photos/seed/$songId/400/400"
+
+                    val audioUrl = item.downloadUrl?.lastOrNull()?.url
+                        ?: item.downloadUrl?.firstOrNull()?.url
+                        ?: ""
+
+                    if (audioUrl.isBlank()) return@mapNotNull null
+
+                    Song(
+                        id = "saavn_$songId",
+                        title = title,
+                        artist = artistName,
+                        albumArtUrl = artworkUrl,
+                        streamUrl = audioUrl,
+                        durationMs = (item.duration ?: 180L) * 1000L,
+                        genre = "Pop / Indian",
+                        album = album
+                    )
+                }
+                if (mapped.isNotEmpty()) return mapped
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "JioSaavn search failed on $activeJioSaavnServer: ${e.message}")
+            }
+            attempts++
+            jioSaavnServerIndex = (jioSaavnServerIndex + 1) % JIOSAAVN_SERVERS.size
+            activeJioSaavnServer = JIOSAAVN_SERVERS[jioSaavnServerIndex]
+            rebuildRetrofitServices()
+        }
+        return emptyList()
+    }
+
+    // Jamendo Free Open Source Music Search
+    private suspend fun searchJamendo(query: String): List<Song> {
+        return try {
+            val response = jamendoApi?.searchTracks(search = query)
+            val tracks = response?.results ?: emptyList()
+
+            tracks.filter { !it.name.isNullOrBlank() && (!it.audio.isNullOrBlank() || !it.audiodownload.isNullOrBlank()) }.map { track ->
+                val trackId = track.id ?: System.currentTimeMillis().toString()
+                val audioUrl = track.audio?.ifBlank { null } ?: track.audiodownload ?: ""
+
+                Song(
+                    id = "jamendo_$trackId",
+                    title = track.name ?: "Jamendo Track",
+                    artist = track.artist_name ?: "Independent Artist",
+                    albumArtUrl = track.image?.ifBlank { null } ?: "https://picsum.photos/seed/$trackId/400/400",
+                    streamUrl = audioUrl,
+                    durationMs = (track.duration ?: 180L) * 1000L,
+                    genre = "Independent Open Source",
+                    album = track.album_name ?: "Jamendo Release"
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Jamendo search failed: ${e.message}")
+            emptyList()
+        }
     }
 
     // Deezer Search Implementation
@@ -354,44 +541,6 @@ object MusicSourcesManager {
         }
     }
 
-    // JioSaavn Search Implementation
-    private suspend fun searchJioSaavn(query: String): List<Song> {
-        return try {
-            val response = jioSaavnApi?.searchSongs(query)
-            val items = response?.data?.results ?: emptyList()
-
-            items.mapNotNull { item ->
-                val songId = item.id ?: return@mapNotNull null
-                val title = item.name ?: "Unknown Song"
-                val album = item.album?.name ?: "Single"
-
-                val artworkUrl = item.image?.lastOrNull()?.url
-                    ?: item.image?.firstOrNull()?.url
-                    ?: "https://picsum.photos/seed/$songId/400/400"
-
-                val audioUrl = item.downloadUrl?.lastOrNull()?.url
-                    ?: item.downloadUrl?.firstOrNull()?.url
-                    ?: ""
-
-                if (audioUrl.isBlank()) return@mapNotNull null
-
-                Song(
-                    id = "saavn_$songId",
-                    title = title,
-                    artist = "JioSaavn Artist",
-                    albumArtUrl = artworkUrl,
-                    streamUrl = audioUrl,
-                    durationMs = (item.duration ?: 180L) * 1000L,
-                    genre = "Bollywood / Pop",
-                    album = album
-                )
-            }
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "JioSaavn search failed: ${e.message}")
-            emptyList()
-        }
-    }
-
     // Piped API Search Implementation
     private suspend fun searchPiped(query: String): List<Song> {
         var attempts = 0
@@ -408,8 +557,8 @@ object MusicSourcesManager {
                         albumArtUrl = result.thumbnail ?: "https://picsum.photos/seed/piped/400/400",
                         streamUrl = result.url ?: "",
                         durationMs = (result.duration ?: 180L) * 1000L,
-                        genre = "Electronic",
-                        album = "YouTube Single"
+                        genre = "YouTube Music",
+                        album = "Single"
                     )
                 }
             } catch (e: Exception) {
@@ -421,6 +570,35 @@ object MusicSourcesManager {
             }
         }
         return emptyList()
+    }
+
+    // Audius Decentralized Search Implementation
+    private suspend fun searchAudius(query: String): List<Song> {
+        return try {
+            val response = audiusApi?.searchTracks(query)
+            val tracks = response?.data ?: emptyList()
+
+            tracks.mapNotNull { track ->
+                val trackId = track.id ?: return@mapNotNull null
+                val title = track.title ?: "Audius Song"
+                val artist = track.user?.name ?: "Audius Creator"
+                val streamUrl = "https://discoveryprovider.audius.co/v1/tracks/$trackId/stream?app_name=YodhaMusicApp"
+
+                Song(
+                    id = "audius_$trackId",
+                    title = title,
+                    artist = artist,
+                    albumArtUrl = "https://picsum.photos/seed/$trackId/400/400",
+                    streamUrl = streamUrl,
+                    durationMs = (track.duration ?: 180L) * 1000L,
+                    genre = "Decentralized Audio",
+                    album = "Audius Release"
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Audius search failed: ${e.message}")
+            emptyList()
+        }
     }
 
     suspend fun getPipedStreamUrl(songId: String): String? = withContext(Dispatchers.IO) {
@@ -481,5 +659,7 @@ enum class SearchSource {
     ALL,
     JIOSAAVN,
     PIPED,
+    JAMENDO,
+    AUDIUS,
     ITUNES
 }
