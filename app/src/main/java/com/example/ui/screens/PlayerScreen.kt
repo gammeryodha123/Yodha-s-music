@@ -52,12 +52,11 @@ fun PlayerScreen(
     var activePlayerTab by remember { mutableIntStateOf(0) } // 0: Song, 1: Lyrics, 2: Queue
 
     val lyricsRepository = remember { LyricsRepository() }
-    val syncedLyricsResult by produceState(
-        initialValue = lyricsRepository.getSyncedLyricsForSong(song),
-        key1 = song.id
-    ) {
-        val onlineResult = lyricsRepository.fetchLyricsOnline(song)
-        value = onlineResult
+    var syncedLyricsResult by remember(song.id) {
+        mutableStateOf(lyricsRepository.getSyncedLyricsForSong(song))
+    }
+    LaunchedEffect(song.id) {
+        syncedLyricsResult = lyricsRepository.fetchLyricsOnline(song)
     }
     val syncedLyrics = syncedLyricsResult.lines
 
