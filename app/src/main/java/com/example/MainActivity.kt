@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.AppDatabaseHelper
 import com.example.data.AuthManager
+import com.example.data.FirestoreManager
 import com.example.data.MusicRepository
 import com.example.model.Song
 import com.example.network.AudioPlayerManager
@@ -40,9 +41,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         AppDatabaseHelper.init(applicationContext)
         AuthManager.init(applicationContext)
+        FirestoreManager.init(applicationContext)
 
-        // Initialize the AdMob backend. Skipped on emulators/containers (no Google
-        // Play services) to avoid policy violations and crashes.
+        // Initialize the AdMob backend.
         if (isAdSupported()) {
             try {
                 MobileAds.initialize(this)
@@ -51,8 +52,6 @@ class MainActivity : ComponentActivity() {
             } catch (e: Throwable) {
                 Log.e("MainActivity", "Failed to initialize AdMob SDK: ${e.message}")
             }
-        } else {
-            Log.d("MainActivity", "Running on emulator/container - skipping AdMob initialization.")
         }
 
         setContent {

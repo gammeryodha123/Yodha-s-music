@@ -10,7 +10,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.aistudio.musicplayer.f088"
+        applicationId = "com.aistudio.yodha.kdjxms"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

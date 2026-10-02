@@ -37,46 +37,53 @@ class LyricsRepository {
 
     suspend fun fetchLyricsOnline(song: Song): LyricsResult = withContext(Dispatchers.IO) {
         val cleanTitle = song.title.replace(Regex("(?i)\\(.*\\)|\\[.*\\]"), "").trim()
-        val cleanArtist = song.artist.replace(Regex("(?i)vevo|official|music|topic"), "").trim()
+        val cleanArtist = song.artist.replace(Regex("(?i)vevo|official|music|topic|collective|studio|sessions|artist"), "").trim()
 
-        // 1. Primary: Lrclib.net (Open Source Synced Lyrics)
-        try {
-            val response = LrcLibClient.api.getLyrics(
-                trackName = cleanTitle,
-                artistName = cleanArtist
-            )
+        // 1. Primary: Lrclib.net Direct Match
+        if (cleanArtist.isNotBlank() && !cleanArtist.contains("YouTube", ignoreCase = true)) {
+            try {
+                val response = LrcLibClient.api.getLyrics(
+                    trackName = cleanTitle,
+                    artistName = cleanArtist
+                )
 
-            if (!response.syncedLyrics.isNullOrBlank()) {
-                val lines = parseLrcLyrics(response.syncedLyrics)
-                if (lines.isNotEmpty()) {
+                if (!response.syncedLyrics.isNullOrBlank()) {
+                    val lines = parseLrcLyrics(response.syncedLyrics)
+                    if (lines.isNotEmpty()) {
+                        return@withContext LyricsResult(
+                            lines = lines,
+                            provider = LyricsProvider.LRCLIB,
+                            isSynced = true,
+                            trackTitle = response.trackName,
+                            artistName = response.artistName
+                        )
+                    }
+                } else if (!response.plainLyrics.isNullOrBlank()) {
+                    val lines = convertPlainToTimedLyrics(response.plainLyrics)
                     return@withContext LyricsResult(
                         lines = lines,
                         provider = LyricsProvider.LRCLIB,
-                        isSynced = true,
+                        isSynced = false,
                         trackTitle = response.trackName,
                         artistName = response.artistName
                     )
                 }
-            } else if (!response.plainLyrics.isNullOrBlank()) {
-                val lines = convertPlainToTimedLyrics(response.plainLyrics)
-                return@withContext LyricsResult(
-                    lines = lines,
-                    provider = LyricsProvider.LRCLIB,
-                    isSynced = false,
-                    trackTitle = response.trackName,
-                    artistName = response.artistName
-                )
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "Lrclib.net direct match failed for $cleanTitle by $cleanArtist: ${e.message}")
             }
-        } catch (e: Exception) {
-            AppLogger.w(TAG, "Lrclib.net direct match failed for $cleanTitle by $cleanArtist: ${e.message}")
         }
 
-        // 1b. Search Lrclib.net if direct get was empty
+        // 1b. Smart Search on Lrclib.net by Title
         try {
-            val searchResults = LrcLibClient.api.searchLyrics(query = "$cleanTitle $cleanArtist")
+            val searchQuery = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+            val searchResults = LrcLibClient.api.searchLyrics(query = searchQuery)
             val bestMatch = searchResults.firstOrNull {
                 !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank()
-            }
+            } ?: if (cleanArtist.isNotBlank()) {
+                LrcLibClient.api.searchLyrics(query = cleanTitle).firstOrNull {
+                    !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank()
+                }
+            } else null
 
             if (bestMatch != null) {
                 if (!bestMatch.syncedLyrics.isNullOrBlank()) {
@@ -85,7 +92,9 @@ class LyricsRepository {
                         return@withContext LyricsResult(
                             lines = lines,
                             provider = LyricsProvider.LRCLIB,
-                            isSynced = true
+                            isSynced = true,
+                            trackTitle = bestMatch.trackName,
+                            artistName = bestMatch.artistName
                         )
                     }
                 } else if (!bestMatch.plainLyrics.isNullOrBlank()) {
@@ -93,7 +102,9 @@ class LyricsRepository {
                     return@withContext LyricsResult(
                         lines = lines,
                         provider = LyricsProvider.LRCLIB,
-                        isSynced = false
+                        isSynced = false,
+                        trackTitle = bestMatch.trackName,
+                        artistName = bestMatch.artistName
                     )
                 }
             }
@@ -101,25 +112,27 @@ class LyricsRepository {
             AppLogger.w(TAG, "Lrclib.net search failed: ${e.message}")
         }
 
-        // 2. Secondary: Lyrics.ovh (Free Open Source Plain Lyrics)
-        try {
-            val ovhResponse = LrcLibClient.lyricsOvhApi.getLyrics(
-                artist = cleanArtist,
-                title = cleanTitle
-            )
-            if (!ovhResponse.lyrics.isNullOrBlank()) {
-                val lines = convertPlainToTimedLyrics(ovhResponse.lyrics)
-                return@withContext LyricsResult(
-                    lines = lines,
-                    provider = LyricsProvider.LYRICS_OVH,
-                    isSynced = false
+        // 2. Secondary: Lyrics.ovh Fallback
+        if (cleanArtist.isNotBlank()) {
+            try {
+                val ovhResponse = LrcLibClient.lyricsOvhApi.getLyrics(
+                    artist = cleanArtist,
+                    title = cleanTitle
                 )
+                if (!ovhResponse.lyrics.isNullOrBlank()) {
+                    val lines = convertPlainToTimedLyrics(ovhResponse.lyrics)
+                    return@withContext LyricsResult(
+                        lines = lines,
+                        provider = LyricsProvider.LYRICS_OVH,
+                        isSynced = false
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "Lyrics.ovh failed: ${e.message}")
             }
-        } catch (e: Exception) {
-            AppLogger.w(TAG, "Lyrics.ovh failed: ${e.message}")
         }
 
-        // 3. Fallback: Parse embedded lyrics or generate structured sample lines
+        // 3. Fallback to embedded/structured lines
         return@withContext getSyncedLyricsForSong(song)
     }
 
@@ -142,24 +155,14 @@ class LyricsRepository {
                 LyricLine(54000L, "Lost in a dream where the future shines"),
                 LyricLine(66000L, "Tracing the shadows of forgotten lines"),
                 LyricLine(78000L, "In the digital haze, we find our key"),
-                LyricLine(90000L, "Together forever in endless harmony"),
-                LyricLine(105000L, "♪ (Instrumental Breakdown) ♪"),
-                LyricLine(125000L, "Neon dreams guiding us through the night"),
-                LyricLine(140000L, "Fading away into the morning light"),
-                LyricLine(160000L, "Hold on tight until the break of day"),
-                LyricLine(180000L, "Where neon dreams never fade away...")
+                LyricLine(90000L, "Together forever in endless harmony")
             )
             "2" -> listOf(
                 LyricLine(0L, "♪ (Gentle Acoustic Guitar) ♪"),
                 LyricLine(10000L, "Golden rays breaking through the trees"),
                 LyricLine(20000L, "A fresh warm breeze floating on the sea"),
                 LyricLine(30000L, "Coffee in hand as the world wakes up"),
-                LyricLine(42000L, "Pouring sweet memories in my cup"),
-                LyricLine(55000L, "♪ (Acoustic Strumming) ♪"),
-                LyricLine(70000L, "Acoustic sunrise softly calling my name"),
-                LyricLine(85000L, "Life moves on, but love remains the same"),
-                LyricLine(100000L, "Step outside and take in the view"),
-                LyricLine(120000L, "Every new dawn is a chance brand new")
+                LyricLine(42000L, "Pouring sweet memories in my cup")
             )
             else -> listOf(
                 LyricLine(0L, "♪ Playing ${song.title} by ${song.artist} ♪"),

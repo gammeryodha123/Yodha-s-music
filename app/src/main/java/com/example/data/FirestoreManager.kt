@@ -1,23 +1,57 @@
 package com.example.data
 
+import android.content.Context
 import com.example.model.Playlist
 import com.example.model.Song
 import com.example.model.User
 import com.example.util.AppLogger
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
 object FirestoreManager {
     private const val TAG = "FirestoreManager"
 
-    private val firestore: FirebaseFirestore? by lazy {
-        try {
-            FirebaseFirestore.getInstance()
-        } catch (e: Throwable) {
-            AppLogger.e(TAG, "FirebaseFirestore initialization error: ${e.message}")
-            null
+    private var initializedApp: FirebaseApp? = null
+
+    fun init(context: Context) {
+        if (initializedApp == null) {
+            try {
+                val options = FirebaseOptions.Builder()
+                    .setProjectId("yodha-music-67")
+                    .setApplicationId("1:1058333427757:android:6aed4f05765cc8b70510a4")
+                    .setApiKey("AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg")
+                    .setGcmSenderId("1058333427757")
+                    .setStorageBucket("yodha-music-67.firebasestorage.app")
+                    .build()
+
+                val appName = "YodhaFirestoreApp"
+                val existingApps = FirebaseApp.getApps(context)
+                val existing = existingApps.find { it.name == appName }
+
+                initializedApp = existing ?: FirebaseApp.initializeApp(context.applicationContext, options, appName)
+                AppLogger.i(TAG, "FirebaseApp initialized with explicit Options for project yodha-music-67")
+            } catch (e: Throwable) {
+                AppLogger.e(TAG, "Failed initializing explicit FirebaseApp: ${e.message}")
+            }
         }
     }
+
+    private val firestore: FirebaseFirestore?
+        get() {
+            return try {
+                val app = initializedApp ?: FirebaseApp.getInstance()
+                FirebaseFirestore.getInstance(app)
+            } catch (e: Throwable) {
+                try {
+                    FirebaseFirestore.getInstance()
+                } catch (err: Throwable) {
+                    AppLogger.e(TAG, "FirebaseFirestore instance error: ${err.message}")
+                    null
+                }
+            }
+        }
 
     fun saveUserProfile(user: User) {
         val db = firestore ?: return

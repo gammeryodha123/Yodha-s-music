@@ -37,7 +37,7 @@ fun SearchScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var searchQuery by remember { mutableStateOf("Kesariya") }
+    var searchQuery by remember { mutableStateOf("") }
     var selectedSource by remember { mutableStateOf(SearchSource.ALL) }
 
     val repository = remember { MusicRepository() }
@@ -79,7 +79,7 @@ fun SearchScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search songs, artists on JioSaavn & Piped...") },
+            placeholder = { Text("Search songs, artists, albums...") },
             leadingIcon = {
                 if (isSearching) {
                     CircularProgressIndicator(
@@ -137,7 +137,7 @@ fun SearchScreen(
                 FilterChip(
                     selected = selectedSource == SearchSource.ITUNES,
                     onClick = { selectedSource = SearchSource.ITUNES },
-                    label = { Text("iTunes Music 🍎") }
+                    label = { Text("iTunes & Deezer 🍎") }
                 )
             }
         }
@@ -145,7 +145,7 @@ fun SearchScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = if (isSearching) "Searching open streams..." else "Results (${searchResults.size} tracks)",
+            text = if (isSearching) "Searching open streams..." else if (searchQuery.isBlank()) "Featured & Trending (${searchResults.size})" else "Results (${searchResults.size} tracks)",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -205,6 +205,7 @@ fun SearchScreen(
                                 Text("${song.artist} • ${song.album}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                                 val sourceLabel = when {
+                                    song.id.startsWith("deezer_") -> "Deezer Hi-Fi"
                                     song.id.startsWith("saavn_") -> "JioSaavn 320kbps"
                                     song.id.startsWith("piped_") -> "Piped YouTube"
                                     song.id.startsWith("itunes_") -> "iTunes Stream"
