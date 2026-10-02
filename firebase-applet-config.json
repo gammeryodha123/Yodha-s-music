@@ -1,12 +1,11 @@
 {
-  "projectId": "circular-hangar-csmzh",
-  "appId": "1:684033752161:web:42fdec3268ee81e3c87e20",
-  "apiKey": "AIzaSyAcwyg4E4bMwqiGodKhzZXluwkiC7WNCDQ",
-  "authDomain": "circular-hangar-csmzh.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-yodhasmusic-f0883535-73c2-4b29-8daf-ae7f3ff4d62e",
-  "storageBucket": "circular-hangar-csmzh.firebasestorage.app",
-  "messagingSenderId": "684033752161",
+  "projectId": "gen-lang-client-0764159337",
+  "appId": "1:1063476534016:web:c05b6e710f37dc250f31e5",
+  "apiKey": "AIzaSyAvbIIQP9egJoAJJ2nD_J882kjZ9h_Q-no",
+  "authDomain": "gen-lang-client-0764159337.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0764159337.firebasestorage.app",
+  "messagingSenderId": "1063476534016",
   "measurementId": "",
-  "oAuthClientId": "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com",
+  "oAuthClientId": "1063476534016-oelpj49eekj8hmvj7sea2v60if6rf5em.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

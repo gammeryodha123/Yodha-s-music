@@ -12,8 +12,8 @@ import com.google.android.gms.common.api.ApiException
 
 object GoogleAuthHelper {
     private const val TAG = "GoogleAuthHelper"
-    // Web client ID from google-services.json
-    private const val WEB_CLIENT_ID = "1058333427757-avmlama6291kspq79ttpliulo5vf82mi.apps.googleusercontent.com"
+    // Web client ID from firebase-applet-config.json
+    private const val WEB_CLIENT_ID = "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com"
 
     fun getGoogleSignInClient(context: Context): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

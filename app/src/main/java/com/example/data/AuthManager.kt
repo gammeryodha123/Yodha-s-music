@@ -46,36 +46,12 @@ object AuthManager {
         val defaultAccounts = listOf(
             RegisteredAccount(
                 user = User(
-                    id = "user_sunitha",
-                    name = "Sunitha Patchava",
-                    email = "patchavasunitha@gmail.com",
-                    avatarUrl = "https://picsum.photos/seed/sunitha/200/200",
-                    isGuest = false,
-                    plan = "VIP Premium",
-                    authProvider = "google"
-                ),
-                passwordHash = "password123"
-            ),
-            RegisteredAccount(
-                user = User(
-                    id = "user_vip",
-                    name = "Yodha VIP",
-                    email = "vip@yodhamusic.app",
-                    avatarUrl = "https://picsum.photos/seed/yodha_vip/200/200",
+                    id = "user_yodha",
+                    name = "Yodha",
+                    email = "gammeryodha@gmail.com",
+                    avatarUrl = "https://picsum.photos/seed/yodha/200/200",
                     isGuest = false,
                     plan = "Unlimited Hi-Res Lossless",
-                    authProvider = "email"
-                ),
-                passwordHash = "password123"
-            ),
-            RegisteredAccount(
-                user = User(
-                    id = "user_alex",
-                    name = "Alex Vance",
-                    email = "alex.vance@gmail.com",
-                    avatarUrl = "https://picsum.photos/seed/alex/200/200",
-                    isGuest = false,
-                    plan = "VIP Listener",
                     authProvider = "google"
                 ),
                 passwordHash = "password123"
@@ -318,9 +294,7 @@ object AuthManager {
 
     fun getAvailableGoogleAccounts(): List<Pair<String, String>> {
         return listOf(
-            "Sunitha Patchava" to "patchavasunitha@gmail.com",
-            "Alex Vance" to "alex.vance@gmail.com",
-            "Yodha Music Studio" to "studio@yodhamusic.app"
+            "Yodha" to "gammeryodha@gmail.com"
         )
     }
 
