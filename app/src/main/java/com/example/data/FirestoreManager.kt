@@ -16,25 +16,35 @@ object FirestoreManager {
     private var initializedApp: FirebaseApp? = null
 
     fun init(context: Context) {
-        if (initializedApp == null) {
-            try {
-                val options = FirebaseOptions.Builder()
-                    .setProjectId("yodha-music-67")
-                    .setApplicationId("1:1058333427757:android:6aed4f05765cc8b70510a4")
-                    .setApiKey("AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg")
-                    .setGcmSenderId("1058333427757")
-                    .setStorageBucket("yodha-music-67.firebasestorage.app")
-                    .build()
+        try {
+            val options = FirebaseOptions.Builder()
+                .setProjectId("yodha-music-67")
+                .setApplicationId("1:1058333427757:android:6aed4f05765cc8b70510a4")
+                .setApiKey("AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg")
+                .setGcmSenderId("1058333427757")
+                .setStorageBucket("yodha-music-67.firebasestorage.app")
+                .build()
 
-                val appName = "YodhaFirestoreApp"
-                val existingApps = FirebaseApp.getApps(context)
-                val existing = existingApps.find { it.name == appName }
-
-                initializedApp = existing ?: FirebaseApp.initializeApp(context.applicationContext, options, appName)
-                AppLogger.i(TAG, "FirebaseApp initialized with explicit Options for project yodha-music-67")
-            } catch (e: Throwable) {
-                AppLogger.e(TAG, "Failed initializing explicit FirebaseApp: ${e.message}")
+            val apps = FirebaseApp.getApps(context)
+            initializedApp = if (apps.isEmpty()) {
+                FirebaseApp.initializeApp(context.applicationContext, options)
+            } else {
+                try {
+                    val defaultApp = FirebaseApp.getInstance()
+                    if (defaultApp.options.projectId.isNullOrBlank()) {
+                        val custom = apps.find { it.name == "YodhaFirestoreApp" }
+                        custom ?: FirebaseApp.initializeApp(context.applicationContext, options, "YodhaFirestoreApp")
+                    } else {
+                        defaultApp
+                    }
+                } catch (e: Throwable) {
+                    val custom = apps.find { it.name == "YodhaFirestoreApp" }
+                    custom ?: FirebaseApp.initializeApp(context.applicationContext, options, "YodhaFirestoreApp")
+                }
             }
+            AppLogger.i(TAG, "FirebaseApp successfully initialized for Firestore backend.")
+        } catch (e: Throwable) {
+            AppLogger.e(TAG, "Failed initializing FirebaseApp: ${e.message}")
         }
     }
 
