@@ -47,7 +47,6 @@ class MainActivity : ComponentActivity() {
         if (isAdSupported()) {
             try {
                 MobileAds.initialize(this)
-                // Preload the first interstitial so it is ready for the next trigger.
                 AdMobInterstitialHelper.loadAd(this)
             } catch (e: Throwable) {
                 Log.e("MainActivity", "Failed to initialize AdMob SDK: ${e.message}")
@@ -95,8 +94,6 @@ fun MainAppContent(
     var selectedTab by remember { mutableIntStateOf(0) }
     var showFullPlayerScreen by remember { mutableStateOf(false) }
 
-    // Tracks how many songs have been selected so an interstitial ad can be
-    // shown every third selection, matching the original AdMob flow.
     var songSelectionCount by remember { mutableIntStateOf(0) }
 
     val currentSong by AudioPlayerManager.currentSong.collectAsState()
@@ -116,8 +113,6 @@ fun MainAppContent(
         showFullPlayerScreen = false
     }
 
-    // Play a song, optionally gating playback behind an interstitial ad on every
-    // third selection so ads are actually displayed to the user.
     val onSongSelected: (Song, List<Song>) -> Unit = { song, queue ->
         songSelectionCount++
         val activityRef = activity
@@ -131,110 +126,110 @@ fun MainAppContent(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        bottomBar = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Persistent Mini-Player Component
-                BottomPlayerBar(
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    playbackPositionMs = playbackPositionMs,
-                    durationMs = durationMs,
-                    onPlayPauseToggle = {
-                        AudioPlayerManager.togglePlayPause()
-                    },
-                    onSkipNext = {
-                        AudioPlayerManager.playNext(context)
-                    },
-                    onOpenFullPlayer = {
-                        showFullPlayerScreen = true
-                    },
-                    isLiked = isCurrentSongLiked,
-                    onLikeToggle = {
-                        currentSong?.let { repository.toggleLikeSong(it) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            bottomBar = {
+                // Completely hide bottom bar when in Full Player Screen to eliminate overlap
+                if (!showFullPlayerScreen) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // Persistent Mini-Player Component
+                        BottomPlayerBar(
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            playbackPositionMs = playbackPositionMs,
+                            durationMs = durationMs,
+                            onPlayPauseToggle = {
+                                AudioPlayerManager.togglePlayPause()
+                            },
+                            onSkipNext = {
+                                AudioPlayerManager.playNext(context)
+                            },
+                            onOpenFullPlayer = {
+                                showFullPlayerScreen = true
+                            },
+                            isLiked = isCurrentSongLiked,
+                            onLikeToggle = {
+                                currentSong?.let { repository.toggleLikeSong(it) }
+                            }
+                        )
+
+                        // AdMob banner ad rendered above the bottom navigation.
+                        AdMobBannerAd(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                        )
+
+                        // Navigation Bar
+                        NavigationBar(
+                            modifier = Modifier.testTag("bottom_navigation_bar"),
+                            tonalElevation = 8.dp
+                        ) {
+                            NavigationBarItem(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                label = { Text("Home") },
+                                modifier = Modifier.testTag("nav_home")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                                label = { Text("Search") },
+                                modifier = Modifier.testTag("nav_search")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 2,
+                                onClick = { selectedTab = 2 },
+                                icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
+                                label = { Text("Library") },
+                                modifier = Modifier.testTag("nav_library")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 3,
+                                onClick = { selectedTab = 3 },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                label = { Text("Settings") },
+                                modifier = Modifier.testTag("nav_settings")
+                            )
+                        }
                     }
-                )
-
-                // AdMob banner ad rendered above the bottom navigation.
-                AdMobBannerAd(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                )
-
-                // Navigation Bar
-                NavigationBar(
-                    modifier = Modifier.testTag("bottom_navigation_bar"),
-                    tonalElevation = 8.dp
-                ) {
-                    NavigationBarItem(
-                        selected = selectedTab == 0 && !showFullPlayerScreen,
-                        onClick = {
-                            selectedTab = 0
-                            showFullPlayerScreen = false
-                        },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home") },
-                        modifier = Modifier.testTag("nav_home")
+                }
+            }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (!showFullPlayerScreen) innerPadding else PaddingValues(0.dp))
+            ) {
+                when (selectedTab) {
+                    0 -> HomeScreen(
+                        onSongSelected = onSongSelected
                     )
-                    NavigationBarItem(
-                        selected = selectedTab == 1 && !showFullPlayerScreen,
-                        onClick = {
-                            selectedTab = 1
-                            showFullPlayerScreen = false
-                        },
-                        icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                        label = { Text("Search") },
-                        modifier = Modifier.testTag("nav_search")
+                    1 -> SearchScreen(
+                        onSongSelected = onSongSelected
                     )
-                    NavigationBarItem(
-                        selected = selectedTab == 2 && !showFullPlayerScreen,
-                        onClick = {
-                            selectedTab = 2
-                            showFullPlayerScreen = false
-                        },
-                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                        label = { Text("Library") },
-                        modifier = Modifier.testTag("nav_library")
+                    2 -> LibraryScreen(
+                        onSongSelected = onSongSelected
                     )
-                    NavigationBarItem(
-                        selected = selectedTab == 3 && !showFullPlayerScreen,
-                        onClick = {
-                            selectedTab = 3
-                            showFullPlayerScreen = false
-                        },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings") },
-                        modifier = Modifier.testTag("nav_settings")
+                    3 -> SettingsScreen(
+                        onLogout = onLogout
                     )
                 }
             }
         }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            when (selectedTab) {
-                0 -> HomeScreen(
-                    onSongSelected = onSongSelected
-                )
-                1 -> SearchScreen(
-                    onSongSelected = onSongSelected
-                )
-                2 -> LibraryScreen(
-                    onSongSelected = onSongSelected
-                )
-                3 -> SettingsScreen(
-                    onLogout = onLogout
-                )
-            }
 
-            if (showFullPlayerScreen && currentSong != null) {
+        // Full Screen Player Overlay (Edge-to-edge covering the entire viewport)
+        AnimatedVisibility(
+            visible = showFullPlayerScreen && currentSong != null,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(350)) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(300)) + fadeOut()
+        ) {
+            currentSong?.let { activeSong ->
                 PlayerScreen(
-                    song = currentSong!!,
+                    song = activeSong,
                     isPlaying = isPlaying,
                     playbackPositionMs = playbackPositionMs,
                     onPlayPauseToggle = { AudioPlayerManager.togglePlayPause() },
@@ -243,7 +238,7 @@ fun MainAppContent(
                     onPositionChange = { newPosition -> AudioPlayerManager.seekTo(newPosition) },
                     onClose = { showFullPlayerScreen = false },
                     isLiked = isCurrentSongLiked,
-                    onLikeToggle = { repository.toggleLikeSong(currentSong!!) }
+                    onLikeToggle = { repository.toggleLikeSong(activeSong) }
                 )
             }
         }

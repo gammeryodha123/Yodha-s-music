@@ -71,6 +71,8 @@ fun LoginScreen(
     // Google Sign In Picker state
     var showGoogleAccountPicker by remember { mutableStateOf(false) }
     var isGoogleLoading by remember { mutableStateOf(false) }
+    var customGoogleEmail by remember { mutableStateOf("") }
+    var showCustomGoogleInput by remember { mutableStateOf(false) }
 
     // Google SDK Intent Launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -515,14 +517,13 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Google Sign In Button (Launches Real Google SDK Intent or interactive chooser)
+            // Google Sign In Button
             OutlinedButton(
                 onClick = {
                     try {
                         val signInIntent = GoogleAuthHelper.getSignInIntent(context)
                         googleSignInLauncher.launch(signInIntent)
                     } catch (e: Throwable) {
-                        // Fallback directly to Google Account Chooser
                         showGoogleAccountPicker = true
                     }
                 },
@@ -540,7 +541,6 @@ fun LoginScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             ) {
-                // Google Brand Icon representation
                 Surface(
                     shape = CircleShape,
                     color = Color.White,
@@ -614,13 +614,13 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Choose a Google Account",
+                    text = "Sign in with Google",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "to sign in to Yodha Music",
+                    text = "Choose an account to continue to Yodha Music",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -637,7 +637,7 @@ fun LoginScreen(
                         CircularProgressIndicator(color = Color(0xFF4285F4))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Authenticating with Google Account...",
+                            text = "Signing in with Google Account...",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -692,6 +692,50 @@ fun LoginScreen(
                                 }
                                 Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                        }
+                    }
+
+                    // Add Custom Google Email Option
+                    if (showCustomGoogleInput) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = customGoogleEmail,
+                            onValueChange = { customGoogleEmail = it },
+                            label = { Text("Google Account Email") },
+                            placeholder = { Text("yourname@gmail.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (customGoogleEmail.isNotBlank()) {
+                                    isGoogleLoading = true
+                                    coroutineScope.launch {
+                                        val autoName = customGoogleEmail.substringBefore("@").replace(".", " ")
+                                            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                                        val user = AuthManager.signInWithGoogleAccount(
+                                            email = customGoogleEmail,
+                                            name = autoName
+                                        )
+                                        isGoogleLoading = false
+                                        showGoogleAccountPicker = false
+                                        onSignInSuccess(user)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Sign In with this Google Account")
+                        }
+                    } else {
+                        TextButton(
+                            onClick = { showCustomGoogleInput = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Use another Google account")
                         }
                     }
 

@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
@@ -29,14 +28,12 @@ import com.example.network.AudioPlayerManager
 import com.example.network.MusicSourcesManager
 import com.example.network.SearchSource
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun SearchScreen(
     onSongSelected: (Song, List<Song>) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
     var selectedSource by remember { mutableStateOf(SearchSource.ALL) }
 
@@ -185,7 +182,10 @@ fun SearchScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSongSelected(song, searchResults) },
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        )
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -197,34 +197,32 @@ fun SearchScreen(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .size(54.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(10.dp))
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(song.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("${song.artist} • ${song.album}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = song.title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${song.artist} • ${song.album}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
 
-                                val sourceLabel = when {
-                                    song.id.startsWith("deezer_") -> "Deezer Hi-Fi"
-                                    song.id.startsWith("saavn_") -> "JioSaavn 320kbps"
-                                    song.id.startsWith("piped_") -> "Piped YouTube"
-                                    song.id.startsWith("itunes_") -> "iTunes Stream"
-                                    else -> "Open Stream"
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(top = 4.dp)
-                                ) {
-                                    Text(
-                                        text = sourceLabel,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                            // Play Action Button
+                            IconButton(onClick = { onSongSelected(song, searchResults) }) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Play",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(26.dp)
+                                )
                             }
 
                             // Add to Queue button
@@ -232,7 +230,7 @@ fun SearchScreen(
                                 Icon(
                                     imageVector = Icons.Default.PlaylistAdd,
                                     contentDescription = "Add to Queue",
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
