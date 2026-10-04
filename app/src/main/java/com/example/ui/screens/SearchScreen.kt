@@ -155,7 +155,14 @@ fun SearchScreen(
                 FilterChip(
                     selected = selectedSource == SearchSource.ITUNES,
                     onClick = { selectedSource = SearchSource.ITUNES },
-                    label = { Text("iTunes & Deezer 🍎") }
+                    label = { Text("Apple iTunes 🍎") }
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedSource == SearchSource.DEEZER,
+                    onClick = { selectedSource = SearchSource.DEEZER },
+                    label = { Text("Deezer Hi-Fi 🎵") }
                 )
             }
         }

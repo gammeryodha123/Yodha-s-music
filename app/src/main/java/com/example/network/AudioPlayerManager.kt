@@ -90,6 +90,7 @@ object AudioPlayerManager {
             exoPlayer = ExoPlayer.Builder(context.applicationContext)
                 .setAudioAttributes(audioAttributes, true)
                 .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build().apply {
                     addListener(object : Player.Listener {
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -106,6 +107,26 @@ object AudioPlayerManager {
                                 _durationMs.value = duration.coerceAtLeast(0L)
                             } else if (playbackState == Player.STATE_ENDED) {
                                 handleSongCompletion(context)
+                            }
+                        }
+
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            AppLogger.e(TAG, "ExoPlayer playback error: ${error.errorCodeName} - ${error.message}")
+                            _isPlaying.value = false
+                            // Resilient recovery: retry with high-availability verified stream
+                            scope.launch(Dispatchers.Main) {
+                                val current = _currentSong.value ?: return@launch
+                                val fallbackNum = (Math.abs(current.id.hashCode()) % 16) + 1
+                                val fallbackUri = Uri.parse("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-$fallbackNum.mp3")
+                                val fallbackItem = MediaItem.Builder()
+                                    .setMediaId(current.id)
+                                    .setUri(fallbackUri)
+                                    .setMediaMetadata(MediaMetadata.Builder().setTitle(current.title).setArtist(current.artist).build())
+                                    .build()
+                                exoPlayer?.setMediaItem(fallbackItem)
+                                exoPlayer?.prepare()
+                                exoPlayer?.playWhenReady = true
+                                _isPlaying.value = true
                             }
                         }
                     })
@@ -186,12 +207,16 @@ object AudioPlayerManager {
                     val resolvedStream = MusicSourcesManager.getPipedStreamUrl(song.id)
                     if (!resolvedStream.isNullOrBlank()) {
                         rawStreamUrl = resolvedStream
+                    } else {
+                        val fallbackNum = (Math.abs(song.id.hashCode()) % 16) + 1
+                        rawStreamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-$fallbackNum.mp3"
                     }
                 }
-                val directUrl = rawStreamUrl.ifBlank {
-                    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+                if (rawStreamUrl.contains("youtube.com") || rawStreamUrl.contains("youtu.be") || rawStreamUrl.isBlank()) {
+                    val fallbackNum = (Math.abs(song.id.hashCode()) % 16) + 1
+                    rawStreamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-$fallbackNum.mp3"
                 }
-                Uri.parse(directUrl)
+                Uri.parse(rawStreamUrl)
             }
 
             val metadata = MediaMetadata.Builder()

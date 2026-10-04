@@ -298,8 +298,8 @@ object MusicSourcesManager {
         .build()
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .build()
 
     private var deezerApi: DeezerApiService? = null
@@ -376,7 +376,7 @@ object MusicSourcesManager {
             async { searchJamendo(query) }
         } else null
 
-        val deezerJob = if (source == SearchSource.ALL || source == SearchSource.ITUNES) {
+        val deezerJob = if (source == SearchSource.ALL || source == SearchSource.DEEZER || source == SearchSource.ITUNES) {
             async { searchDeezer(query) }
         } else null
 
@@ -396,7 +396,7 @@ object MusicSourcesManager {
             async { searchAudius(query) }
         } else null
 
-        // Collect result datasets concurrently, limiting maximum wait time to 2 seconds
+        // Collect result datasets concurrently, limiting maximum wait time to 4.5 seconds
         val resultsList = listOfNotNull(
             jioSaavnJob,
             jamendoJob,
@@ -407,7 +407,7 @@ object MusicSourcesManager {
             audiusJob
         ).map { job ->
             try {
-                withTimeout(2000L) {
+                withTimeout(4500L) {
                     job.await()
                 }
             } catch (e: Throwable) {
@@ -700,8 +700,10 @@ object MusicSourcesManager {
             try {
                 val videoId = songId.substringAfter("piped_", "")
                 if (videoId.isEmpty()) return@withContext null
-                val info = pipedApi?.getStreamInfo(videoId)
-                val bestAudio = info?.audioStreams?.maxByOrNull { it.bitrate ?: 0L }?.url
+                val bestAudio = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                    val info = pipedApi?.getStreamInfo(videoId)
+                    info?.audioStreams?.maxByOrNull { it.bitrate ?: 0L }?.url
+                }
                 if (bestAudio != null) {
                     return@withContext bestAudio
                 }
@@ -750,5 +752,6 @@ enum class SearchSource {
     YOUTUBEI,
     JAMENDO,
     AUDIUS,
-    ITUNES
+    ITUNES,
+    DEEZER
 }
