@@ -20,6 +20,12 @@ interface LocalSongDao {
     @Query("UPDATE local_songs SET isDownloaded = :isDownloaded, localFilePath = :localFilePath, downloadProgress = :progress WHERE id = :songId")
     suspend fun updateDownloadStatus(songId: String, isDownloaded: Boolean, localFilePath: String?, progress: Int)
 
+    @Query("SELECT * FROM local_songs WHERE isLiked = 1")
+    fun getLikedSongs(): Flow<List<LocalSongEntity>>
+
+    @Query("UPDATE local_songs SET isLiked = :isLiked WHERE id = :songId")
+    suspend fun updateLikedStatus(songId: String, isLiked: Boolean)
+
     @Query("UPDATE local_songs SET lastPlaybackPositionMs = :positionMs WHERE id = :songId")
     suspend fun updatePlaybackPosition(songId: String, positionMs: Long)
 }

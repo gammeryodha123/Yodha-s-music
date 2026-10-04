@@ -130,71 +130,69 @@ fun MainAppContent(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
-                // Completely hide bottom bar when in Full Player Screen to eliminate overlap
-                if (!showFullPlayerScreen) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // Persistent Mini-Player Component
-                        BottomPlayerBar(
-                            currentSong = currentSong,
-                            isPlaying = isPlaying,
-                            playbackPositionMs = playbackPositionMs,
-                            durationMs = durationMs,
-                            onPlayPauseToggle = {
-                                AudioPlayerManager.togglePlayPause()
-                            },
-                            onSkipNext = {
-                                AudioPlayerManager.playNext(context)
-                            },
-                            onOpenFullPlayer = {
-                                showFullPlayerScreen = true
-                            },
-                            isLiked = isCurrentSongLiked,
-                            onLikeToggle = {
-                                currentSong?.let { repository.toggleLikeSong(it) }
-                            }
-                        )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Persistent Mini-Player Component
+                    BottomPlayerBar(
+                        currentSong = currentSong,
+                        isPlaying = isPlaying,
+                        playbackPositionMs = playbackPositionMs,
+                        durationMs = durationMs,
+                        onPlayPauseToggle = {
+                            AudioPlayerManager.togglePlayPause()
+                        },
+                        onSkipNext = {
+                            AudioPlayerManager.playNext(context)
+                        },
+                        onOpenFullPlayer = {
+                            showFullPlayerScreen = true
+                        },
+                        isLiked = isCurrentSongLiked,
+                        onLikeToggle = {
+                            currentSong?.let { repository.toggleLikeSong(it) }
+                        },
+                        visible = !showFullPlayerScreen
+                    )
 
-                        // AdMob banner ad rendered above the bottom navigation.
-                        AdMobBannerAd(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                        )
+                    // AdMob banner ad rendered above the bottom navigation.
+                    AdMobBannerAd(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    )
 
-                        // Navigation Bar
-                        NavigationBar(
-                            modifier = Modifier.testTag("bottom_navigation_bar"),
-                            tonalElevation = 8.dp
-                        ) {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                                label = { Text("Home") },
-                                modifier = Modifier.testTag("nav_home")
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                                label = { Text("Search") },
-                                modifier = Modifier.testTag("nav_search")
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 2,
-                                onClick = { selectedTab = 2 },
-                                icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                                label = { Text("Library") },
-                                modifier = Modifier.testTag("nav_library")
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 3,
-                                onClick = { selectedTab = 3 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") },
-                                modifier = Modifier.testTag("nav_settings")
-                            )
-                        }
+                    // Navigation Bar
+                    NavigationBar(
+                        modifier = Modifier.testTag("bottom_navigation_bar"),
+                        tonalElevation = 8.dp
+                    ) {
+                        NavigationBarItem(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                            label = { Text("Home") },
+                            modifier = Modifier.testTag("nav_home")
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            label = { Text("Search") },
+                            modifier = Modifier.testTag("nav_search")
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 2,
+                            onClick = { selectedTab = 2 },
+                            icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
+                            label = { Text("Library") },
+                            modifier = Modifier.testTag("nav_library")
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 3,
+                            onClick = { selectedTab = 3 },
+                            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                            label = { Text("Settings") },
+                            modifier = Modifier.testTag("nav_settings")
+                        )
                     }
                 }
             }

@@ -1,13 +1,42 @@
 package com.example.data
 
 import androidx.compose.runtime.mutableStateListOf
+import com.example.database.LocalSongEntity
 import com.example.database.RecentSongEntity
 import com.example.model.Playlist
 import com.example.model.Song
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class MusicRepository {
+
+    private val scope = CoroutineScope(Dispatchers.IO)
+
+    fun getLikedSongsFlow(): Flow<List<Song>> {
+        val db = AppDatabaseHelper.database ?: return flowOf(emptyList())
+        return db.localSongDao().getLikedSongs().map { list ->
+            list.map { entity ->
+                Song(
+                    id = entity.id,
+                    title = entity.title,
+                    artist = entity.artist,
+                    albumArtUrl = entity.albumArtUrl,
+                    streamUrl = entity.streamUrl,
+                    durationMs = entity.durationMs,
+                    lyrics = entity.lyrics ?: "",
+                    isDownloaded = entity.isDownloaded,
+                    localFilePath = entity.localFilePath,
+                    isLiked = true,
+                    genre = "Liked",
+                    album = "Favorites"
+                )
+            }
+        }
+    }
 
     companion object {
         val likedSongs = mutableStateListOf<Song>()
@@ -121,6 +150,36 @@ class MusicRepository {
             likedSongs.remove(existing)
         } else {
             likedSongs.add(song.copy(isLiked = true))
+        }
+
+        scope.launch {
+            try {
+                val db = AppDatabaseHelper.database ?: return@launch
+                val existingEntity = db.localSongDao().getSongById(song.id)
+                if (existingEntity == null) {
+                    db.localSongDao().insertSong(
+                        LocalSongEntity(
+                            id = song.id,
+                            title = song.title,
+                            artist = song.artist,
+                            albumArtUrl = song.albumArtUrl,
+                            streamUrl = song.streamUrl,
+                            durationMs = song.durationMs,
+                            lyrics = song.lyrics,
+                            isLiked = (existing == null),
+                            isDownloaded = false,
+                            localFilePath = null,
+                            downloadProgress = 0,
+                            lastPlaybackPositionMs = 0L,
+                            lastPlayedAt = System.currentTimeMillis()
+                        )
+                    )
+                } else {
+                    db.localSongDao().updateLikedStatus(song.id, existing == null)
+                }
+            } catch (e: Throwable) {
+                com.example.util.AppLogger.w("MusicRepository", "Failed toggling like in database: ${e.message}")
+            }
         }
     }
 

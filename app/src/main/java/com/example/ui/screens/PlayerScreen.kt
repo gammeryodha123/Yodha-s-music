@@ -70,6 +70,7 @@ fun PlayerScreen(
     var showPresetDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
+    var showFullScreenLyricsModal by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -117,8 +118,8 @@ fun PlayerScreen(
                         Text("Song", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     SegmentedButton(
-                        selected = activePlayerTab == 1,
-                        onClick = { activePlayerTab = 1 },
+                        selected = showFullScreenLyricsModal,
+                        onClick = { showFullScreenLyricsModal = true },
                         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
                     ) {
                         Text("Lyrics", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -504,6 +505,23 @@ fun PlayerScreen(
                 }
             }
         }
+
+        // Full Screen Lyrics Modal Overlay
+        AnimatedVisibility(
+            visible = showFullScreenLyricsModal,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            FullScreenLyricsModal(
+                song = song,
+                playbackPositionMs = playbackPositionMs,
+                syncedLyrics = syncedLyrics,
+                syncedLyricsResult = syncedLyricsResult,
+                onPositionChange = onPositionChange,
+                onClose = { showFullScreenLyricsModal = false }
+            )
+        }
     }
 
     // Sound FX / Preset Dialog
@@ -672,6 +690,123 @@ fun PlayerScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun FullScreenLyricsModal(
+    song: Song,
+    playbackPositionMs: Long,
+    syncedLyrics: List<com.example.data.LyricLine>,
+    syncedLyricsResult: com.example.data.LyricsResult,
+    onPositionChange: (Long) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp).copy(alpha = 0.98f),
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.98f),
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.98f)
+                    )
+                )
+            )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .testTag("full_screen_lyrics_modal")
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header with artwork, song details, and prominent close icon
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(56.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        AsyncImage(
+                            model = song.albumArtUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.width(14.dp))
+                    
+                    Column {
+                        Text(
+                            text = song.title,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = song.artist,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Prominent close icon matching Material Design 3 guidelines (circular background, target > 48dp)
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = CircleShape
+                        )
+                        .testTag("close_lyrics_modal_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close Lyrics Modal",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Sync source label
+            Text(
+                text = "Synced via ${syncedLyricsResult.provider.displayName}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+
+            // Auto-scrolling, highlighting, interactive lyrics view
+            LyricsView(
+                lyrics = syncedLyrics,
+                playbackPositionMs = playbackPositionMs,
+                onSeekTo = onPositionChange,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 

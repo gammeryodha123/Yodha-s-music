@@ -42,10 +42,11 @@ fun BottomPlayerBar(
     onDismiss: (() -> Unit)? = null,
     isLiked: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
+    visible: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
-        visible = currentSong != null,
+        visible = visible && currentSong != null,
         enter = slideInVertically(initialOffsetY = { it }),
         exit = slideOutVertically(targetOffsetY = { it }),
         modifier = modifier

@@ -33,9 +33,9 @@ fun LibraryScreen(
     val context = LocalContext.current
     var activeTab by remember { mutableIntStateOf(0) } // 0: Liked, 1: Playlists, 2: Offline
     val repository = remember { MusicRepository() }
-    val likedSongs = MusicRepository.likedSongs
+    val likedSongs by repository.getLikedSongsFlow().collectAsState(initial = emptyList())
+    val downloadedSongs by OfflineDownloadManager.getDownloadedSongsFlow().collectAsState(initial = emptyList())
     val playlists = MusicRepository.customPlaylists
-    val sampleSongs = remember { repository.getSampleSongs() }
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistName by remember { mutableStateOf("") }
@@ -287,13 +287,31 @@ fun LibraryScreen(
             2 -> {
                 // Offline Downloads Tab
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Zero-Data Offline Listening",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    val storageUsage = OfflineDownloadManager.getOfflineStorageUsage(context)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Zero-Data Offline Listening",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                text = "Disk: $storageUsage",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = "Tracks saved locally for offline flights and underground commutes.",
                         fontSize = 12.sp,
@@ -301,51 +319,65 @@ fun LibraryScreen(
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
 
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(sampleSongs) { song ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSongSelected(song, sampleSongs) },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                    if (downloadedSongs.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("No offline tracks cached", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("Search and download tracks to play offline!", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(downloadedSongs) { song ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSongSelected(song, downloadedSongs) },
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    AsyncImage(
-                                        model = song.albumArtUrl,
-                                        contentDescription = song.title,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(song.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(song.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                        AsyncImage(
+                                            model = song.albumArtUrl,
+                                            contentDescription = song.title,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(song.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Text(song.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                         ) {
-                                            Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Cached", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = "Offline Ready", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Cached", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        item {
-                            Spacer(modifier = Modifier.height(100.dp))
+                            item {
+                                Spacer(modifier = Modifier.height(100.dp))
+                            }
                         }
                     }
                 }
