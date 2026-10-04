@@ -66,6 +66,12 @@ object AudioPlayerManager {
     private val _playbackSpeed = MutableStateFlow(1.0f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
+    private val _playbackPitch = MutableStateFlow(1.0f)
+    val playbackPitch: StateFlow<Float> = _playbackPitch.asStateFlow()
+
+    private val _isSkipSilenceEnabled = MutableStateFlow(false)
+    val isSkipSilenceEnabled: StateFlow<Boolean> = _isSkipSilenceEnabled.asStateFlow()
+
     private val _audioPreset = MutableStateFlow(AudioPreset.BALANCED)
     val audioPreset: StateFlow<AudioPreset> = _audioPreset.asStateFlow()
 
@@ -270,7 +276,31 @@ object AudioPlayerManager {
 
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
-        exoPlayer?.setPlaybackSpeed(speed)
+        exoPlayer?.let { player ->
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(speed, _playbackPitch.value)
+        }
+    }
+
+    fun setPlaybackPitch(pitch: Float) {
+        _playbackPitch.value = pitch
+        exoPlayer?.let { player ->
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(_playbackSpeed.value, pitch)
+        }
+    }
+
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float) {
+        _playbackSpeed.value = speed
+        _playbackPitch.value = pitch
+        exoPlayer?.let { player ->
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(speed, pitch)
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    fun toggleSkipSilence() {
+        val nextValue = !_isSkipSilenceEnabled.value
+        _isSkipSilenceEnabled.value = nextValue
+        exoPlayer?.skipSilenceEnabled = nextValue
     }
 
     fun setAudioPreset(preset: AudioPreset) {

@@ -591,34 +591,78 @@ fun PlayerScreen(
         )
     }
 
-    // Playback Speed Dialog
+    val playbackPitch by AudioPlayerManager.playbackPitch.collectAsState()
+    val isSkipSilence by AudioPlayerManager.isSkipSilenceEnabled.collectAsState()
+
+    // InnerTune Advanced Audio Tuner Dialog
     if (showSpeedDialog) {
         AlertDialog(
             onDismissRequest = { showSpeedDialog = false },
-            title = { Text("Playback Speed") },
+            title = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("InnerTune Settings")
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Speed Slider
+                    Column {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    AudioPlayerManager.setPlaybackSpeed(speed)
-                                    showSpeedDialog = false
-                                }
-                                .padding(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(
-                                selected = playbackSpeed == speed,
-                                onClick = {
-                                    AudioPlayerManager.setPlaybackSpeed(speed)
-                                    showSpeedDialog = false
-                                }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("${speed}x ${if (speed == 1.0f) "(Normal)" else ""}")
+                            Text("Tempo / Speed", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(String.format("%.2fx", playbackSpeed), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
+                        Slider(
+                            value = playbackSpeed,
+                            onValueChange = { AudioPlayerManager.setPlaybackSpeed(it) },
+                            valueRange = 0.5f..2.0f,
+                            steps = 5
+                        )
+                    }
+
+                    // Pitch Slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Pitch Tune", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(String.format("%.2fx", playbackPitch), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = playbackPitch,
+                            onValueChange = { AudioPlayerManager.setPlaybackPitch(it) },
+                            valueRange = 0.5f..2.0f,
+                            steps = 5
+                        )
+                    }
+
+                    HorizontalDivider()
+
+                    // Skip Silence Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { AudioPlayerManager.toggleSkipSilence() }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Skip Silence", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Automatically skip quiet segments", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isSkipSilence,
+                            onCheckedChange = { AudioPlayerManager.toggleSkipSilence() }
+                        )
                     }
                 }
             },
