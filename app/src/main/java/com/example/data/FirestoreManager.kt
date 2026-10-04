@@ -1,6 +1,7 @@
 package com.example.data
 
 import android.content.Context
+import com.example.BuildConfig
 import com.example.model.Playlist
 import com.example.model.Song
 import com.example.model.User
@@ -18,11 +19,11 @@ object FirestoreManager {
     fun init(context: Context) {
         try {
             val options = FirebaseOptions.Builder()
-                .setProjectId("yodha-music-67")
-                .setApplicationId("1:1058333427757:android:6aed4f05765cc8b70510a4")
-                .setApiKey("AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg")
-                .setGcmSenderId("1058333427757")
-                .setStorageBucket("yodha-music-67.firebasestorage.app")
+                .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
+                .setApplicationId(BuildConfig.FIREBASE_APP_ID)
+                .setApiKey(BuildConfig.FIREBASE_API_KEY)
+                .setGcmSenderId(BuildConfig.FIREBASE_MESSAGING_SENDER_ID)
+                .setStorageBucket(BuildConfig.FIREBASE_STORAGE_BUCKET)
                 .build()
 
             val apps = FirebaseApp.getApps(context)

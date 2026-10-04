@@ -132,6 +132,13 @@ fun SearchScreen(
             }
             item {
                 FilterChip(
+                    selected = selectedSource == SearchSource.YOUTUBEI,
+                    onClick = { selectedSource = SearchSource.YOUTUBEI },
+                    label = { Text("YouTube-i ⚡") }
+                )
+            }
+            item {
+                FilterChip(
                     selected = selectedSource == SearchSource.JAMENDO,
                     onClick = { selectedSource = SearchSource.JAMENDO },
                     label = { Text("Jamendo Open 🎸") }

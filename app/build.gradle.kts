@@ -17,6 +17,37 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Dynamic Firebase and OAuth injector from project configuration
+        val configFile = file("${project.rootDir}/firebase-applet-config.json")
+        var projId = "yodha-music-67"
+        var appIdVal = "1:1058333427757:android:6aed4f05765cc8b70510a4"
+        var apiKeyVal = "AIzaSyAN5xiqIABkhaxlQ1dPzopFvJsb8E50JQg"
+        var bucket = "yodha-music-67.firebasestorage.app"
+        var senderId = "1058333427757"
+        var oAuthId = "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com"
+
+        if (configFile.exists()) {
+            val text = configFile.readText()
+            val extractKey = { key: String ->
+                val regex = Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"")
+                val match = regex.find(text)
+                match?.groups?.get(1)?.value
+            }
+            projId = extractKey("projectId") ?: projId
+            appIdVal = extractKey("appId") ?: appIdVal
+            apiKeyVal = extractKey("apiKey") ?: apiKeyVal
+            bucket = extractKey("storageBucket") ?: bucket
+            senderId = extractKey("messagingSenderId") ?: senderId
+            oAuthId = extractKey("oAuthClientId") ?: oAuthId
+        }
+
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$projId\"")
+        buildConfigField("String", "FIREBASE_APP_ID", "\"$appIdVal\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"$apiKeyVal\"")
+        buildConfigField("String", "FIREBASE_STORAGE_BUCKET", "\"$bucket\"")
+        buildConfigField("String", "FIREBASE_MESSAGING_SENDER_ID", "\"$senderId\"")
+        buildConfigField("String", "FIREBASE_OAUTH_CLIENT_ID", "\"$oAuthId\"")
     }
 
     signingConfigs {

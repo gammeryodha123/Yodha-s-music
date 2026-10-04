@@ -3,6 +3,7 @@ package com.example.data
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.example.BuildConfig
 import com.example.model.User
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -12,8 +13,8 @@ import com.google.android.gms.common.api.ApiException
 
 object GoogleAuthHelper {
     private const val TAG = "GoogleAuthHelper"
-    // Web client ID from firebase-applet-config.json
-    private const val WEB_CLIENT_ID = "684033752161-rq07s0hfajbjfp7f53nq1a3ad8jdfk65.apps.googleusercontent.com"
+    // Web client ID dynamically injected from firebase-applet-config.json
+    private val WEB_CLIENT_ID = BuildConfig.FIREBASE_OAUTH_CLIENT_ID
 
     fun getGoogleSignInClient(context: Context): GoogleSignInClient {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

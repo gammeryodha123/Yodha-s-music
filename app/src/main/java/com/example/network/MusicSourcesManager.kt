@@ -131,6 +131,29 @@ interface AudiusApiService {
 }
 
 // -----------------------------------------------------
+// 2.5 YouTube InnerTube (YouTube-i) API Models
+// -----------------------------------------------------
+@JsonClass(generateAdapter = true)
+data class YouTubeiClient(val clientName: String = "WEB_REMIX", val clientVersion: String = "1.20240101.01.00")
+
+@JsonClass(generateAdapter = true)
+data class YouTubeiContext(val client: YouTubeiClient = YouTubeiClient())
+
+@JsonClass(generateAdapter = true)
+data class YouTubeiSearchRequest(
+    val context: YouTubeiContext = YouTubeiContext(),
+    val query: String
+)
+
+interface YouTubeiApiService {
+    @retrofit2.http.POST("youtubei/v1/search")
+    suspend fun search(
+        @retrofit2.http.Body body: YouTubeiSearchRequest,
+        @retrofit2.http.Query("key") apiKey: String = "AIzaSyAO_vYgS7E0y-B0b-u_Jp21p8E50JQg"
+    ): okhttp3.ResponseBody
+}
+
+// -----------------------------------------------------
 // 3. Unified Music Sources Manager with 100+ Integrations
 // -----------------------------------------------------
 object MusicSourcesManager {
@@ -285,6 +308,7 @@ object MusicSourcesManager {
     private var pipedApi: PipedApiService? = null
     private var jamendoApi: JamendoApiService? = null
     private var audiusApi: AudiusApiService? = null
+    private var youtubeiApi: YouTubeiApiService? = null
 
     init {
         rebuildRetrofitServices()
@@ -327,6 +351,12 @@ object MusicSourcesManager {
                 .client(okHttpClient)
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build().create(AudiusApiService::class.java)
+
+            youtubeiApi = Retrofit.Builder()
+                .baseUrl("https://www.youtube.com/")
+                .client(okHttpClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build().create(YouTubeiApiService::class.java)
         } catch (e: Throwable) {
             AppLogger.e(TAG, "Failed building Retrofit clients: ${e.message}")
         }
@@ -358,6 +388,10 @@ object MusicSourcesManager {
             async { searchPiped(query) }
         } else null
 
+        val youtubeiJob = if (source == SearchSource.ALL || source == SearchSource.YOUTUBEI) {
+            async { searchYouTubei(query) }
+        } else null
+
         val audiusJob = if (source == SearchSource.ALL || source == SearchSource.AUDIUS) {
             async { searchAudius(query) }
         } else null
@@ -369,6 +403,7 @@ object MusicSourcesManager {
             deezerJob,
             iTunesJob,
             pipedJob,
+            youtubeiJob,
             audiusJob
         ).map { job ->
             try {
@@ -588,6 +623,77 @@ object MusicSourcesManager {
         }
     }
 
+    private suspend fun searchYouTubei(query: String): List<Song> {
+        return try {
+            val requestBody = YouTubeiSearchRequest(query = query)
+            val rawResponse = youtubeiApi?.search(requestBody)?.string() ?: return emptyList()
+            val adapter = moshi.adapter(Map::class.java)
+            val responseMap = adapter.fromJson(rawResponse) as? Map<*, *> ?: return emptyList()
+
+            val songs = mutableListOf<Song>()
+            extractSongsFromMap(responseMap, songs)
+            songs.take(20)
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "YouTube-i search failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun extractSongsFromMap(map: Map<*, *>, out: MutableList<Song>) {
+        if (map.containsKey("videoId")) {
+            val videoId = map["videoId"]?.toString() ?: ""
+            if (videoId.isNotEmpty()) {
+                val title = extractString(map, "title") ?: "YouTube-i Track"
+                val artist = extractString(map, "author") ?: extractString(map, "publisher") ?: "YouTube Creator"
+                val thumbnail = "https://img.youtube.com/vi/$videoId/0.jpg"
+                val durationMs = 180000L
+
+                val alreadyExists = out.any { it.id == "piped_$videoId" }
+                if (!alreadyExists) {
+                    out.add(
+                        Song(
+                            id = "piped_$videoId",
+                            title = title,
+                            artist = artist,
+                            albumArtUrl = thumbnail,
+                            streamUrl = "https://www.youtube.com/watch?v=$videoId",
+                            durationMs = durationMs,
+                            genre = "YouTube-i / InnerTube",
+                            album = "InnerTube Release"
+                        )
+                    )
+                }
+            }
+        }
+
+        for (value in map.values) {
+            if (value is Map<*, *>) {
+                extractSongsFromMap(value, out)
+            } else if (value is List<*>) {
+                for (item in value) {
+                    if (item is Map<*, *>) {
+                        extractSongsFromMap(item, out)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun extractString(map: Map<*, *>, key: String): String? {
+        val obj = map[key] ?: return null
+        if (obj is String) return obj
+        if (obj is Map<*, *>) {
+            val simpleText = obj["simpleText"]?.toString()
+            if (!simpleText.isNullOrBlank()) return simpleText
+            val runs = obj["runs"] as? List<*>
+            if (runs != null && runs.isNotEmpty()) {
+                val firstRun = runs.firstOrNull() as? Map<*, *>
+                return firstRun?.get("text")?.toString()
+            }
+        }
+        return null
+    }
+
     suspend fun getPipedStreamUrl(songId: String): String? = withContext(Dispatchers.IO) {
         var attempts = 0
         while (attempts < PIPED_SERVERS.size) {
@@ -641,6 +747,7 @@ enum class SearchSource {
     ALL,
     JIOSAAVN,
     PIPED,
+    YOUTUBEI,
     JAMENDO,
     AUDIUS,
     ITUNES
