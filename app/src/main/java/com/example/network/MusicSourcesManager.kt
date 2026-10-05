@@ -86,7 +86,7 @@ data class JioSaavnSearchResponse(val success: Boolean? = null, val data: JioSaa
 
 interface JioSaavnApiService {
     @GET("api/search/songs")
-    suspend fun searchSongs(@Query("query") query: String, @Query("limit") limit: Int = 20): JioSaavnSearchResponse
+    suspend fun searchSongs(@Query("query") query: String, @Query("limit") limit: Int = 20): okhttp3.ResponseBody
 }
 
 @JsonClass(generateAdapter = true)
@@ -100,7 +100,7 @@ data class PipedStreamInfo(val title: String? = null, val audioStreams: List<Pip
 
 interface PipedApiService {
     @GET("search")
-    suspend fun search(@Query("q") query: String, @Query("filter") filter: String = "music_songs"): List<PipedSearchResult>
+    suspend fun search(@Query("q") query: String, @Query("filter") filter: String = "music_songs"): okhttp3.ResponseBody
     @GET("streams/{videoId}")
     suspend fun getStreamInfo(@Path("videoId") videoId: String): PipedStreamInfo
 }
@@ -435,27 +435,66 @@ object MusicSourcesManager {
         var attempts = 0
         while (attempts < JIOSAAVN_SERVERS.size) {
             try {
-                val response = jioSaavnApi?.searchSongs(query)
-                val items = response?.data?.results ?: emptyList()
+                val rawBody = jioSaavnApi?.searchSongs(query)?.string() ?: ""
+                if (rawBody.isBlank()) {
+                    attempts++
+                    continue
+                }
+
+                val adapter = moshi.adapter(Map::class.java)
+                val responseMap = adapter.fromJson(rawBody) as? Map<*, *> ?: continue
+
+                val dataObj = responseMap["data"]
+                val items = when (dataObj) {
+                    is List<*> -> dataObj.filterIsInstance<Map<*, *>>()
+                    is Map<*, *> -> {
+                        val resultsObj = dataObj["results"]
+                        if (resultsObj is List<*>) {
+                            resultsObj.filterIsInstance<Map<*, *>>()
+                        } else emptyList()
+                    }
+                    else -> emptyList()
+                }
 
                 val mapped = items.mapNotNull { item ->
-                    val songId = item.id ?: return@mapNotNull null
-                    val title = item.name ?: "Unknown Song"
-                    val album = item.album?.name ?: "Single"
+                    val songId = item["id"]?.toString() ?: return@mapNotNull null
+                    val title = item["name"]?.toString() ?: item["title"]?.toString() ?: "Unknown Song"
 
-                    val artistName = item.artists?.primary?.firstOrNull()?.name
-                        ?: item.primaryArtists
+                    val albumMap = item["album"] as? Map<*, *>
+                    val album = albumMap?.get("name")?.toString() ?: "Single"
+
+                    val artistsMap = item["artists"] as? Map<*, *>
+                    val primaryArtistsList = artistsMap?.get("primary") as? List<*>
+                    val firstArtistMap = primaryArtistsList?.firstOrNull() as? Map<*, *>
+                    val artistName = firstArtistMap?.get("name")?.toString()
+                        ?: item["primaryArtists"]?.toString()
                         ?: "JioSaavn Artist"
 
-                    val artworkUrl = item.image?.lastOrNull()?.url
-                        ?: item.image?.firstOrNull()?.url
-                        ?: "https://picsum.photos/seed/$songId/400/400"
+                    val imageList = item["image"] as? List<*>
+                    val artworkUrl = if (imageList != null && imageList.isNotEmpty()) {
+                        val lastImage = imageList.lastOrNull()
+                        val resolvedUrl = if (lastImage is Map<*, *>) {
+                            lastImage["url"]?.toString()
+                        } else if (lastImage is String) {
+                            lastImage
+                        } else null
+                        resolvedUrl ?: "https://picsum.photos/seed/$songId/400/400"
+                    } else "https://picsum.photos/seed/$songId/400/400"
 
-                    val audioUrl = item.downloadUrl?.lastOrNull()?.url
-                        ?: item.downloadUrl?.firstOrNull()?.url
-                        ?: ""
+                    val downloadList = item["downloadUrl"] as? List<*>
+                    val audioUrl = if (downloadList != null && downloadList.isNotEmpty()) {
+                        val lastDownload = downloadList.lastOrNull()
+                        if (lastDownload is Map<*, *>) {
+                            lastDownload["url"]?.toString()
+                        } else if (lastDownload is String) {
+                            lastDownload
+                        } else ""
+                    } else ""
 
-                    if (audioUrl.isBlank()) return@mapNotNull null
+                    if (audioUrl.isNullOrBlank()) return@mapNotNull null
+
+                    val durationStr = item["duration"]?.toString() ?: "180"
+                    val durationSec = durationStr.toDoubleOrNull()?.toLong() ?: 180L
 
                     Song(
                         id = "saavn_$songId",
@@ -463,7 +502,7 @@ object MusicSourcesManager {
                         artist = artistName,
                         albumArtUrl = artworkUrl,
                         streamUrl = audioUrl,
-                        durationMs = (item.duration ?: 180L) * 1000L,
+                        durationMs = durationSec * 1000L,
                         genre = "Pop / Indian",
                         album = album
                     )
@@ -570,17 +609,41 @@ object MusicSourcesManager {
         var attempts = 0
         while (attempts < PIPED_SERVERS.size) {
             try {
-                val response = pipedApi?.search(query) ?: emptyList()
-                return response.filter { it.type == "stream" }.map { result ->
-                    val videoId = result.url?.substringAfter("watch?v=", "") ?: ""
+                val rawBody = pipedApi?.search(query)?.string() ?: ""
+                if (rawBody.isBlank()) {
+                    attempts++
+                    continue
+                }
+
+                val adapter = moshi.adapter(Any::class.java)
+                val responseJson = adapter.fromJson(rawBody)
+
+                val items = when (responseJson) {
+                    is List<*> -> responseJson.filterIsInstance<Map<*, *>>()
+                    is Map<*, *> -> {
+                        val itemsList = responseJson["items"] ?: responseJson["results"] ?: responseJson["data"]
+                        if (itemsList is List<*>) {
+                            itemsList.filterIsInstance<Map<*, *>>()
+                        } else emptyList()
+                    }
+                    else -> emptyList()
+                }
+
+                return items.filter { it["type"] == "stream" }.map { result ->
+                    val url = result["url"]?.toString() ?: ""
+                    val videoId = url.substringAfter("watch?v=", "")
                     val id = if (videoId.isNotEmpty()) "piped_$videoId" else "piped_${System.currentTimeMillis()}"
+
+                    val durationStr = result["duration"]?.toString() ?: "180"
+                    val durationSec = durationStr.toDoubleOrNull()?.toLong() ?: 180L
+
                     Song(
                         id = id,
-                        title = result.title ?: "YouTube Track",
-                        artist = result.uploaderName ?: "YouTube Music",
-                        albumArtUrl = result.thumbnail ?: "https://picsum.photos/seed/piped/400/400",
-                        streamUrl = result.url ?: "",
-                        durationMs = (result.duration ?: 180L) * 1000L,
+                        title = result["title"]?.toString() ?: "YouTube Track",
+                        artist = result["uploaderName"]?.toString() ?: "YouTube Music",
+                        albumArtUrl = result["thumbnail"]?.toString() ?: "https://picsum.photos/seed/piped/400/400",
+                        streamUrl = url,
+                        durationMs = durationSec * 1000L,
                         genre = "YouTube Music",
                         album = "Single"
                     )

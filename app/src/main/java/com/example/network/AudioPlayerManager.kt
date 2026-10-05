@@ -385,15 +385,20 @@ object AudioPlayerManager {
     private fun startProgressTracking() {
         stopProgressTracking()
         progressJob = scope.launch {
+            var saveCounter = 0
             while (isActive) {
                 exoPlayer?.let { player ->
                     if (player.isPlaying) {
                         val pos = player.currentPosition
                         _playbackPositionMs.value = pos
 
-                        val activeSong = _currentSong.value
-                        if (activeSong != null && pos > 0) {
-                            OfflineDownloadManager.savePlaybackProgress(activeSong.id, pos)
+                        saveCounter++
+                        if (saveCounter >= 10) { // Every 5 seconds (10 * 500ms)
+                            saveCounter = 0
+                            val activeSong = _currentSong.value
+                            if (activeSong != null && pos > 0) {
+                                OfflineDownloadManager.savePlaybackProgress(activeSong.id, pos)
+                            }
                         }
                     }
                 }
