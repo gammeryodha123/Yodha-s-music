@@ -48,6 +48,9 @@ object AudioPlayerManager {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
 
@@ -79,6 +82,7 @@ object AudioPlayerManager {
     val sleepTimerMinutesRemaining: StateFlow<Int?> = _sleepTimerMinutesRemaining.asStateFlow()
 
     private var sleepTimerJob: Job? = null
+    private var hasScrobbledCurrent = false
 
     fun getOrCreatePlayer(context: Context): ExoPlayer {
         if (exoPlayer == null) {
@@ -103,6 +107,7 @@ object AudioPlayerManager {
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
+                            _isBuffering.value = (playbackState == Player.STATE_BUFFERING)
                             if (playbackState == Player.STATE_READY) {
                                 _durationMs.value = duration.coerceAtLeast(0L)
                             } else if (playbackState == Player.STATE_ENDED) {
@@ -159,6 +164,7 @@ object AudioPlayerManager {
 
     fun playSong(context: Context, song: Song, queue: List<Song> = emptyList()) {
         val player = getOrCreatePlayer(context)
+        hasScrobbledCurrent = false
         _currentSong.value = song
         if (queue.isNotEmpty()) {
             _playlist.value = queue
@@ -242,11 +248,20 @@ object AudioPlayerManager {
                 player.playWhenReady = true
                 _isPlaying.value = true
 
+                try {
+                    val serviceIntent = android.content.Intent(context.applicationContext, PlaybackService::class.java)
+                    context.startService(serviceIntent)
+                    getMediaSession(context)
+                } catch (e: Exception) {
+                    AppLogger.w(TAG, "Failed starting PlaybackService: ${e.message}")
+                }
+
                 val updatedSong = song.copy(
                     isDownloaded = isOffline,
                     localFilePath = localFile?.absolutePath
                 )
                 _currentSong.value = updatedSong
+                LastFmScrobbler.updateNowPlaying(updatedSong)
                 OfflineDownloadManager.cacheRecentlyPlayedSong(updatedSong, savedProgress)
             }
         }
@@ -400,6 +415,16 @@ object AudioPlayerManager {
                                 OfflineDownloadManager.savePlaybackProgress(activeSong.id, pos)
                             }
                         }
+
+                        // Last.fm Scrobbler 50% Threshold Check
+                        val activeSong = _currentSong.value
+                        if (activeSong != null && !hasScrobbledCurrent && pos > 0) {
+                            val duration = if (activeSong.durationMs > 0) activeSong.durationMs else _durationMs.value
+                            if (duration > 10000L && (pos >= duration / 2 || pos >= 240000L)) {
+                                hasScrobbledCurrent = true
+                                LastFmScrobbler.scrobble(activeSong)
+                            }
+                        }
                     }
                 }
                 delay(500)
@@ -412,9 +437,31 @@ object AudioPlayerManager {
         progressJob = null
     }
 
+    private var mediaSession: androidx.media3.session.MediaSession? = null
+
+    fun getMediaSession(context: Context): androidx.media3.session.MediaSession? {
+        if (mediaSession == null) {
+            val player = getOrCreatePlayer(context)
+            try {
+                mediaSession = androidx.media3.session.MediaSession.Builder(context.applicationContext, player)
+                    .setId("YodhaMusicPlaybackSession")
+                    .build()
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "Failed creating MediaSession: ${e.message}")
+            }
+        }
+        return mediaSession
+    }
+
+    fun releaseSession() {
+        mediaSession?.release()
+        mediaSession = null
+    }
+
     fun release() {
         stopProgressTracking()
         sleepTimerJob?.cancel()
+        releaseSession()
         exoPlayer?.release()
         exoPlayer = null
     }

@@ -43,6 +43,7 @@ fun BottomPlayerBar(
     isLiked: Boolean = false,
     onLikeToggle: (() -> Unit)? = null,
     visible: Boolean = true,
+    isBuffering: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -153,12 +154,20 @@ fun BottomPlayerBar(
                                 )
                                 .testTag("mini_player_play_pause")
                         ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            if (isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
 
                         IconButton(

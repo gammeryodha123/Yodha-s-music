@@ -98,6 +98,7 @@ fun MainAppContent(
 
     val currentSong by AudioPlayerManager.currentSong.collectAsState()
     val isPlaying by AudioPlayerManager.isPlaying.collectAsState()
+    val isBuffering by AudioPlayerManager.isBuffering.collectAsState()
     val playbackPositionMs by AudioPlayerManager.playbackPositionMs.collectAsState()
     val durationMs by AudioPlayerManager.durationMs.collectAsState()
 
@@ -150,6 +151,7 @@ fun MainAppContent(
                         onLikeToggle = {
                             currentSong?.let { repository.toggleLikeSong(it) }
                         },
+                        isBuffering = isBuffering,
                         visible = !showFullPlayerScreen
                     )
 
@@ -236,7 +238,8 @@ fun MainAppContent(
                     onPositionChange = { newPosition -> AudioPlayerManager.seekTo(newPosition) },
                     onClose = { showFullPlayerScreen = false },
                     isLiked = isCurrentSongLiked,
-                    onLikeToggle = { repository.toggleLikeSong(activeSong) }
+                    onLikeToggle = { repository.toggleLikeSong(activeSong) },
+                    isBuffering = isBuffering
                 )
             }
         }

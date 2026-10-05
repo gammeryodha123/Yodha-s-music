@@ -45,6 +45,7 @@ fun PlayerScreen(
     onClose: () -> Unit,
     isLiked: Boolean = false,
     onLikeToggle: () -> Unit,
+    isBuffering: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -477,12 +478,20 @@ fun PlayerScreen(
                             .size(68.dp)
                             .background(MaterialTheme.colorScheme.primary, CircleShape)
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(38.dp)
-                        )
+                        if (isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(32.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(38.dp)
+                            )
+                        }
                     }
 
                     // Next Track
